@@ -81,11 +81,12 @@
                         <span style="color:#6b7280;">&middot; from</span> <%= author_link(rt.quoted_author) %>
                       </div>
                       <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text) %></div>
+                      <%= render_media(rt.media) %>
                       <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
                         <% if (ts = format_time(unit[:at])) %><span><%= ts %></span><% end %>
                         <% if (link = rt.quoted_permalink || rt.permalink) %>
                           <% if ts %> &middot; <% end %>
-                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;">View on X &rarr;</a>
+                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;"><%= view_label(rt) %> &rarr;</a>
                         <% end %>
                       </div>
                     </div>
@@ -95,24 +96,37 @@
                 <% t = unit[:tweet] %>
                 <tr>
                   <td style="padding:0 32px 12px 32px;">
-                    <div style="border-left:3px solid #e5e7eb; padding:8px 0 8px 14px; margin:6px 0;">
+                    <div style="border-left:3px solid <%= t.thread_head? ? '#7c3aed' : '#e5e7eb' %>; padding:8px 0 8px 14px; margin:6px 0;">
                       <div style="font-size:14px; color:#374151;">
                         <%= author_link(t.author) %>
                         <% if t.kind == :quote && t.quoted_author %>
                           <span style="color:#6b7280;">quoting</span> <%= author_link(t.quoted_author) %>
                         <% end %>
+                        <% if t.thread_head? && t.thread_continuations && !t.thread_continuations.empty? %>
+                          <span style="display:inline-block; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#7c3aed; background:#f3eaff; padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:1px; font-weight:700;">Thread &middot; <%= 1 + t.thread_continuations.size %></span>
+                        <% end %>
                       </div>
                       <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text) %></div>
+                      <%= render_media(t.media) %>
 
                       <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
                         <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px; color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text) %></div>
+                      <% end %>
+
+                      <% if t.thread_head? && t.thread_continuations %>
+                        <% t.thread_continuations.each do |cont| %>
+                          <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #e5e7eb;">
+                            <div style="font-size:15px; line-height:1.55; color:#111827; white-space:pre-wrap;"><%= render_tweet_text(cont.text) %></div>
+                            <%= render_media(cont.media) %>
+                          </div>
+                        <% end %>
                       <% end %>
 
                       <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
                         <% if (ts = format_time(t.created_at)) %><span><%= ts %></span><% end %>
                         <% if (link = t.permalink) %>
                           <% if ts %> &middot; <% end %>
-                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;">View on X &rarr;</a>
+                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;"><%= view_label(t) %> &rarr;</a>
                         <% end %>
                       </div>
                     </div>
@@ -186,10 +200,44 @@
           <% end %>
           <% end %>
 
+          <!-- Account discovery footer -->
+          <% if @result.discoveries && !@result.discoveries.empty? %>
+            <tr>
+              <td style="padding:8px 32px 4px 32px;">
+                <h2 style="font-size:13px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7280; margin:32px 0 8px; padding-bottom:8px; border-bottom:1px solid #eceef1;">Accounts to consider</h2>
+                <div style="font-size:12px; color:#9ca3af; margin-bottom:10px;">Quoted or retweeted by your follows this week — not currently in your list.</div>
+              </td>
+            </tr>
+            <% @result.discoveries.each do |d| %>
+              <tr>
+                <td style="padding:0 32px 8px 32px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eceef1; border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 14px;">
+                        <a href="<%= h(d.profile_url) %>" style="font-size:15px; color:#111827; text-decoration:none; font-weight:600;">@<%= h(d.handle) %></a>
+                        <span style="font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:#9ca3af; margin-left:6px;"><%= view_source_label(d.source) %></span>
+                        <div style="font-size:12px; color:#6b7280; margin-top:4px;">
+                          <%= d.mentions %> mention<%= d.mentions == 1 ? "" : "s" %>
+                          &middot; by
+                          <% d.mentioned_by.first(4).each_with_index do |s, i| %>
+                            <%= author_link(s) %><%= i < [d.mentioned_by.size, 4].min - 1 ? "," : "" %>
+                          <% end %>
+                          <% if d.mentioned_by.size > 4 %>
+                            <span style="color:#9ca3af;"> + <%= d.mentioned_by.size - 4 %> more</span>
+                          <% end %>
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            <% end %>
+          <% end %>
+
           <!-- Footer -->
           <tr>
             <td style="padding:18px 32px 28px 32px; border-top:1px solid #eceef1; font-size:12px; color:#9ca3af;">
-              Generated by Xtricate so you don't have to open X. Update <code>XTRICATE_ACCOUNTS</code> to change who's included.
+              Generated by Xtricate so you don't have to open X. Update <code>XTRICATE_ACCOUNTS</code> or <code>XTRICATE_BLUESKY_ACCOUNTS</code> to change who's included.
             </td>
           </tr>
         </table>

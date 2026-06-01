@@ -36,32 +36,66 @@ config.validate!(mode: options[:mode])
 # render in the configured zone on both local runs and GitHub Actions (UTC by default).
 ENV["TZ"] = config.timezone
 
-handles = config.accounts
-handles = handles.first(options[:limit]) if options[:limit]
-log.puts "Xtricate: #{handles.size} account(s), looking back #{config.lookback_days} days (since #{config.since.strftime('%b %-d')})."
+twitter_handles = config.accounts
+bluesky_handles = config.bluesky_accounts
+if options[:limit]
+  twitter_handles = twitter_handles.first(options[:limit])
+  bluesky_handles = bluesky_handles.first(options[:limit])
+end
+total_handles = twitter_handles.size + bluesky_handles.size
+log.puts "Xtricate: #{twitter_handles.size} X + #{bluesky_handles.size} Bluesky = #{total_handles} account(s), looking back #{config.lookback_days} days (since #{config.since.strftime('%b %-d')})."
 
-# --- Fetch -------------------------------------------------------------------
-fetcher = Xtricate::Fetch.new(
-  api_key: config.twitterapi_key,
-  since: config.since,
-  max_per_account: config.max_tweets_per_account,
-  logger: log
-)
-log.puts "Fetching from twitterapi.io..."
-activities = fetcher.fetch_all(handles)
+# --- Fetch (Twitter + Bluesky in parallel) -----------------------------------
+activities = []
+
+twitter_thread = nil
+if twitter_handles.any?
+  twitter_fetcher = Xtricate::Fetch.new(
+    api_key: config.twitterapi_key,
+    since: config.since,
+    max_per_account: config.max_tweets_per_account,
+    logger: log
+  )
+  twitter_thread = Thread.new do
+    log.puts "Fetching from twitterapi.io..."
+    twitter_fetcher.fetch_all(twitter_handles)
+  end
+end
+
+bluesky_thread = nil
+if bluesky_handles.any?
+  bluesky_fetcher = Xtricate::BlueskyFetch.new(
+    since: config.since,
+    max_per_account: config.max_tweets_per_account,
+    logger: log
+  )
+  bluesky_thread = Thread.new do
+    log.puts "Fetching from Bluesky..."
+    bluesky_fetcher.fetch_all(bluesky_handles)
+  end
+end
+
+activities.concat(twitter_thread.value) if twitter_thread
+activities.concat(bluesky_thread.value) if bluesky_thread
+
+# Assemble self-threads on each account before downstream processing.
+Xtricate::ThreadAssembly.assemble!(activities)
 
 total = activities.sum { |a| (a.tweets || []).size }
-log.puts "Fetched #{total} tweet(s) across #{activities.count { |a| !a.empty? }} active account(s)."
+log.puts "Fetched #{total} post(s) across #{activities.count { |a| !a.empty? }} active account(s)."
 
 if options[:mode] == :fetch_only
   activities.each do |a|
     next if a.empty?
 
-    log.puts "\n@#{a.handle} — #{a.tweets.size} tweet(s):"
+    src_tag = a.source == :bluesky ? "bsky" : "x"
+    log.puts "\n[#{src_tag}] @#{a.handle} — #{a.tweets.size} post(s):"
     a.tweets.first(5).each do |t|
       tag = t.kind == :original ? "" : "[#{t.kind}] "
+      thread = t.thread_head? ? "[thread+#{(t.thread_continuations || []).size}] " : ""
+      mt = t.media && !t.media.empty? ? " (#{t.media.size}img)" : ""
       links = t.urls.empty? ? "" : "  (#{t.urls.size} link#{'s' if t.urls.size != 1})"
-      log.puts "  #{tag}#{t.text[0, 120]}#{links}"
+      log.puts "  #{tag}#{thread}#{(t.text.empty? ? "(no commentary)" : t.text[0, 120])}#{mt}#{links}"
     end
   end
   log.puts "\nfetch-only done."

@@ -67,6 +67,41 @@ module Xtricate
     def type_label(type) = TYPE_LABELS.fetch(type, "Other")
     def type_color(type) = TYPE_COLORS.fetch(type, TYPE_COLORS["other"])
 
+    # "View on X" or "View on Bluesky" depending on a tweet's source.
+    def view_label(tweet)
+      tweet&.source == :bluesky ? "View on Bluesky" : "View on X"
+    end
+
+    # Inline media thumbnails for tweet/post cards. Up to 4 per card, capped to
+    # keep the email tight. Returns "" if there's no media.
+    def render_media(items)
+      return "" if items.nil? || items.empty?
+
+      thumbs = items.first(4)
+      cell_w = thumbs.size == 1 ? 360 : (thumbs.size == 2 ? 180 : 120)
+      cell_h = thumbs.size == 1 ? 200 : (thumbs.size == 2 ? 180 : 120)
+
+      cells = thumbs.map do |m|
+        src = m.thumb || m.url
+        next if src.nil? || src.empty?
+
+        # Video indicator: small inline badge below the thumb instead of a
+        # CSS-positioned overlay (negative-margin overlays break in most email
+        # clients and leave a cell-height-tall gap below the image).
+        badge = m.type == :video ? %(<div style="font-size:11px; color:#6b7280; margin-top:2px;">&#9658; Video</div>) : ""
+        %(<td valign="top" style="padding:2px;"><img src="#{h(src)}" alt="#{h(m.alt || '')}" width="#{cell_w}" height="#{cell_h}" style="display:block; border-radius:8px; width:#{cell_w}px; height:#{cell_h}px; object-fit:cover; background:#f4f5f7;">#{badge}</td>)
+      end.compact.join
+
+      return "" if cells.empty?
+
+      %(<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;"><tr>#{cells}</tr></table>)
+    end
+
+    # Same idea for Discovery rows.
+    def view_source_label(source)
+      source == :bluesky ? "Bluesky" : "X"
+    end
+
     # Time-of-day stamp for tweet cards (e.g. "11:45am"). The date is already
     # carried by the day divider above the unit, so we don't repeat it here.
     # Uses ENV["TZ"] (set from config.timezone in bin/digest) so the same tweet

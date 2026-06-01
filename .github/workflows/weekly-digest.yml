@@ -20,6 +20,7 @@ jobs:
       - name: Send digest
         env:
           XTRICATE_ACCOUNTS: ${{ secrets.XTRICATE_ACCOUNTS }}
+          XTRICATE_BLUESKY_ACCOUNTS: ${{ secrets.XTRICATE_BLUESKY_ACCOUNTS }}
           XTRICATE_RECIPIENT: ${{ secrets.XTRICATE_RECIPIENT }}
           TWITTERAPI_IO_KEY: ${{ secrets.TWITTERAPI_IO_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

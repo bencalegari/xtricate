@@ -29,7 +29,7 @@ module Xtricate
     # Returns Array<AccountActivity>, one per handle (empty ones included so
     # the summary can note who was quiet).
     def fetch_all(handles)
-      handles.map { |h| AccountActivity.new(handle: h, tweets: fetch_account(h)) }
+      handles.map { |h| AccountActivity.new(handle: h, tweets: fetch_account(h), source: :twitter) }
     end
 
     # Returns Array<Tweet> for one handle, within the lookback window.
@@ -78,7 +78,10 @@ module Xtricate
     end
 
     def request(handle, cursor)
-      params = { userName: handle }
+      # includeReplies surfaces the user's self-thread continuations. We filter
+      # out replies-to-others in normalize() to avoid pulling in conversation
+      # noise we don't have context for.
+      params = { userName: handle, includeReplies: true }
       params[:cursor] = cursor if cursor && !cursor.to_s.empty?
       resp = @conn.get(ENDPOINT, params)
       unless resp.success?
@@ -100,6 +103,15 @@ module Xtricate
     def normalize(t, fallback_author:)
       return nil unless t.is_a?(Hash)
 
+      # We enable includeReplies to surface self-thread continuations, but we
+      # don't want replies to OTHER accounts in the digest — those are
+      # half-conversations without parent context. Keep only originals,
+      # retweets/quotes, and self-replies.
+      reply_target = t["inReplyToUsername"]
+      if reply_target && reply_target.to_s.downcase != fallback_author.to_s.downcase
+        return nil
+      end
+
       retweeted = t["retweeted_tweet"] || t["retweet"]
       quoted    = t["quoted_tweet"] || t["quote"]
 
@@ -110,7 +122,14 @@ module Xtricate
         end
 
       author = dig_author(t) || fallback_author
-      urls = extract_urls(kind == :retweet ? retweeted : t) + extract_urls(quoted)
+      content_src = kind == :retweet ? (retweeted || t) : t
+      urls = extract_urls(content_src) + extract_urls(quoted)
+      media = extract_media(content_src) + extract_media(quoted)
+
+      # twitterapi.io exposes the conversation id as `conversationId` (or rarely
+      # `conversation_id_str`). When present, this lets us detect self-threads.
+      conv_id = t["conversationId"] || t["conversation_id"] || t["conversation_id_str"]
+      in_reply_to = t["inReplyToId"] || t["in_reply_to_status_id_str"] || t["in_reply_to_status_id"]
 
       quoted_src = retweeted || quoted
       Tweet.new(
@@ -127,8 +146,38 @@ module Xtricate
         quote_count: int(t["quoteCount"] || t["quote_count"]),
         quoted_id: quoted_src && (quoted_src["id"] || quoted_src["tweet_id"] || quoted_src["id_str"]),
         quoted_author: quoted_src && dig_author(quoted_src),
-        quoted_text: quoted_src && clean_text(quoted_src["text"] || quoted_src["full_text"] || "")
+        quoted_text: quoted_src && clean_text(quoted_src["text"] || quoted_src["full_text"] || ""),
+        source: :twitter,
+        media: media.uniq { |m| m.thumb || m.url },
+        conversation_id: conv_id&.to_s,
+        thread_root_id: in_reply_to && conv_id ? nil : nil # filled in by ThreadAssembly later
       )
+    end
+
+    # Extract photo + video thumbnails from a tweet/entity object.
+    def extract_media(t)
+      return [] unless t.is_a?(Hash)
+
+      raw = t.dig("extendedEntities", "media") ||
+            t.dig("extended_entities", "media") ||
+            t.dig("entities", "media") ||
+            t["media"] ||
+            []
+      Array(raw).filter_map do |m|
+        next unless m.is_a?(Hash)
+
+        type = case (m["type"] || m["media_type"]).to_s
+               when "photo", "image" then :photo
+               when "video"          then :video
+               when "animated_gif"   then :gif
+               else :photo
+               end
+        photo_url = m["media_url_https"] || m["media_url"] || m["url"]
+        thumb = m["preview_image_url"] || m["preview_url"] || photo_url
+        next if photo_url.nil? && thumb.nil?
+
+        MediaItem.new(type: type, url: photo_url || thumb, thumb: thumb || photo_url, alt: m["alt_text"] || m["ext_alt_text"])
+      end
     end
 
     def dig_author(t)

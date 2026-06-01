@@ -7,7 +7,7 @@ module Xtricate
   class Config
     attr_reader :lookback_days, :model, :max_tweets_per_account,
                 :recipient, :sender_name, :timezone,
-                :preferred_long_form_outlets, :accounts,
+                :preferred_long_form_outlets, :accounts, :bluesky_accounts,
                 :twitterapi_key, :anthropic_key,
                 :gmail_address, :gmail_app_password
 
@@ -30,6 +30,7 @@ module Xtricate
       @gmail_address     = ENV["GMAIL_ADDRESS"]
       @gmail_app_password = ENV["GMAIL_APP_PASSWORD"]
       @accounts          = self.class.parse_accounts(ENV["XTRICATE_ACCOUNTS"])
+      @bluesky_accounts  = self.class.parse_accounts(ENV["XTRICATE_BLUESKY_ACCOUNTS"])
     end
 
     # The cutoff time; tweets older than this are ignored.
@@ -41,8 +42,10 @@ module Xtricate
     # mode: :fetch_only, :dry_run, or :full
     def validate!(mode:)
       errs = []
-      errs << "XTRICATE_ACCOUNTS is empty — set it in .env (or as a GitHub secret) to a comma- or newline-separated list of handles" if accounts.empty?
-      errs << "TWITTERAPI_IO_KEY is not set" if blank?(twitterapi_key)
+      if accounts.empty? && bluesky_accounts.empty?
+        errs << "set XTRICATE_ACCOUNTS and/or XTRICATE_BLUESKY_ACCOUNTS to a comma- or newline-separated list of handles"
+      end
+      errs << "TWITTERAPI_IO_KEY is not set" if accounts.any? && blank?(twitterapi_key)
 
       if %i[dry_run full].include?(mode)
         errs << "ANTHROPIC_API_KEY is not set" if blank?(anthropic_key)

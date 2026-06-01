@@ -24,8 +24,16 @@ module Xtricate
       :url, :type, :title, :image, :description, :site, :sharers,
       keyword_init: true
     )
+    Discovery = Struct.new(:handle, :source, :mentions, :mentioned_by, keyword_init: true) do
+      def profile_url
+        case source
+        when :bluesky then "https://bsky.app/profile/#{handle}"
+        else "https://x.com/#{handle}"
+        end
+      end
+    end
     Result = Struct.new(
-      :overview, :themes, :articles,
+      :overview, :themes, :articles, :discoveries,
       :period_label, :account_count, :active_count,
       :tweet_count, :article_count,
       keyword_init: true
@@ -134,6 +142,7 @@ module Xtricate
       all_tweets = activities.flat_map { |a| a.tweets || [] }
       tweet_index = index_tweets(all_tweets)
       clusters = cluster_articles(all_tweets)
+      discoveries = discover_accounts(all_tweets, activities)
 
       payload = build_payload(activities, all_tweets, clusters)
       decision = call_claude(payload)
@@ -145,6 +154,7 @@ module Xtricate
         overview: decision["overview"].to_s.strip,
         themes: themes,
         articles: articles,
+        discoveries: discoveries,
         period_label: period_label,
         account_count: activities.size,
         active_count: activities.count { |a| !a.empty? },
@@ -173,8 +183,13 @@ module Xtricate
     # Compact, ranked structure for the model. We surface preferred-outlet
     # articles regardless of engagement so a quiet Jacobin essay still reaches
     # the model and can win a long_form slot.
+    #
+    # Thread continuations are dropped: only the thread head is sent to Claude,
+    # carrying the full concatenated thread text. That way Claude sees one
+    # logical post per thread instead of N disjoint tweets.
     def build_payload(activities, all_tweets, clusters)
-      top_tweets = all_tweets.sort_by { |t| -t.engagement }.first(150)
+      payload_tweets = all_tweets.reject { |t| t.thread_member? && !t.thread_head? }
+      top_tweets = payload_tweets.sort_by { |t| -t.engagement }.first(150)
 
       top_articles = clusters.first(60)
       preferred = clusters.select { |c| preferred_outlet?(c.url) }
@@ -198,18 +213,60 @@ module Xtricate
     end
 
     def tweet_for_model(t)
+      # For thread heads, fold the rest of the thread into the text so Claude
+      # judges relevance based on the whole thread, not just the opener.
+      text =
+        if t.thread_head? && t.thread_continuations && !t.thread_continuations.empty?
+          ([t.text] + t.thread_continuations.map(&:text)).reject(&:empty?).join("\n\n")
+        else
+          t.text
+        end
+
       h = {
         id: t.id.to_s,
         by: t.author,
+        source: t.source,
         kind: t.kind,
-        text: t.text
+        text: text
       }
+      h[:thread] = true if t.thread_head?
       h[:urls] = t.urls if t.urls && !t.urls.empty?
       if t.quoted_author
         h[:quoted_by] = t.quoted_author
         h[:quoted_text] = t.quoted_text
       end
       h
+    end
+
+    # Tally non-followed accounts that the followed accounts engaged with this
+    # week (retweeted, quoted). The reader uses this to grow their follow list
+    # without ever opening X/Bluesky.
+    def discover_accounts(all_tweets, activities)
+      followed = activities.each_with_object({}) { |a, h| h[[(a.handle || "").downcase, a.source]] = true }
+      tally = Hash.new { |h, k| h[k] = { count: 0, sources: [], by: {} } }
+
+      all_tweets.each do |t|
+        next unless t.quoted_author && !t.quoted_author.empty?
+
+        key = [t.quoted_author.downcase, t.source]
+        next if followed[key]
+
+        entry = tally[key]
+        entry[:count] += 1
+        entry[:by][t.author] = true
+      end
+
+      tally
+        .sort_by { |_, e| -e[:count] }
+        .first(5)
+        .map do |(handle, source), entry|
+          Discovery.new(
+            handle: handle,
+            source: source,
+            mentions: entry[:count],
+            mentioned_by: entry[:by].keys
+          )
+        end
     end
 
     def call_claude(payload)

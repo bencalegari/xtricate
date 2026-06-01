@@ -1,6 +1,8 @@
 require_relative "xtricate/config"
 require_relative "xtricate/models"
 require_relative "xtricate/fetch"
+require_relative "xtricate/bluesky_fetch"
+require_relative "xtricate/thread_assembly"
 require_relative "xtricate/og_fetch"
 require_relative "xtricate/digest"
 require_relative "xtricate/renderer"
