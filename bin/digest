@@ -1,0 +1,105 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+
+ROOT = File.expand_path("..", __dir__)
+$LOAD_PATH.unshift(File.join(ROOT, "lib"))
+
+# Load .env for local/dry runs. In CI, secrets come from the environment, and
+# dotenv simply finds no file — harmless.
+begin
+  require "dotenv"
+  Dotenv.load(File.join(ROOT, ".env"))
+rescue LoadError
+  # dotenv not installed (e.g. production-only bundle) — env must be preset.
+end
+
+require "xtricate"
+
+options = { mode: :full, out: File.join(ROOT, "digest.html"), limit: nil }
+
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/digest [options]"
+  o.on("--dry-run", "Render the digest to an HTML file instead of emailing") { options[:mode] = :dry_run }
+  o.on("--fetch-only", "Fetch + print a summary; skip Claude and email") { options[:mode] = :fetch_only }
+  o.on("--limit N", Integer, "Only process the first N accounts (for testing)") { |n| options[:limit] = n }
+  o.on("--out FILE", "Output path for --dry-run (default: digest.html)") { |f| options[:out] = f }
+  o.on("-h", "--help", "Show this help") { puts o; exit }
+end
+parser.parse!(ARGV)
+
+log = $stdout
+config = Xtricate::Config.load(root: ROOT)
+config.validate!(mode: options[:mode])
+# Ruby uses TZ for local-time conversion; set it from config so tweet timestamps
+# render in the configured zone on both local runs and GitHub Actions (UTC by default).
+ENV["TZ"] = config.timezone
+
+handles = config.accounts
+handles = handles.first(options[:limit]) if options[:limit]
+log.puts "Xtricate: #{handles.size} account(s), looking back #{config.lookback_days} days (since #{config.since.strftime('%b %-d')})."
+
+# --- Fetch -------------------------------------------------------------------
+fetcher = Xtricate::Fetch.new(
+  api_key: config.twitterapi_key,
+  since: config.since,
+  max_per_account: config.max_tweets_per_account,
+  logger: log
+)
+log.puts "Fetching from twitterapi.io..."
+activities = fetcher.fetch_all(handles)
+
+total = activities.sum { |a| (a.tweets || []).size }
+log.puts "Fetched #{total} tweet(s) across #{activities.count { |a| !a.empty? }} active account(s)."
+
+if options[:mode] == :fetch_only
+  activities.each do |a|
+    next if a.empty?
+
+    log.puts "\n@#{a.handle} — #{a.tweets.size} tweet(s):"
+    a.tweets.first(5).each do |t|
+      tag = t.kind == :original ? "" : "[#{t.kind}] "
+      links = t.urls.empty? ? "" : "  (#{t.urls.size} link#{'s' if t.urls.size != 1})"
+      log.puts "  #{tag}#{t.text[0, 120]}#{links}"
+    end
+  end
+  log.puts "\nfetch-only done."
+  exit 0
+end
+
+if total.zero?
+  log.puts "No tweets in the window — nothing to send. Exiting."
+  exit 0
+end
+
+# --- Summarize ---------------------------------------------------------------
+digest = Xtricate::Digest.new(
+  api_key: config.anthropic_key,
+  model: config.model,
+  since: config.since,
+  lookback_days: config.lookback_days,
+  preferred_outlets: config.preferred_long_form_outlets,
+  logger: log
+)
+result = digest.build(activities)
+
+# --- Render ------------------------------------------------------------------
+renderer = Xtricate::Renderer.new
+html = renderer.render(result)
+subject = renderer.subject(result)
+
+if options[:mode] == :dry_run
+  File.write(options[:out], html)
+  log.puts "Wrote digest to #{options[:out]} (open it in a browser). Subject would be: #{subject.inspect}"
+  exit 0
+end
+
+# --- Send --------------------------------------------------------------------
+mailer = Xtricate::Mailer.new(
+  gmail_address: config.gmail_address,
+  gmail_app_password: config.gmail_app_password,
+  sender_name: config.sender_name
+)
+mailer.deliver(to: config.recipient, subject: subject, html: html)
+log.puts "Sent digest to #{config.recipient}."

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your X digest — <%= h(@result.period_label) %></title>
+</head>
+<body style="margin:0; padding:0; background:#f4f5f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="680" cellpadding="0" cellspacing="0"
+               style="max-width:680px; width:100%; background:#ffffff; border-radius:12px; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1a1a1a;">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding:28px 32px 12px 32px;">
+              <div style="font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7280;">Weekly X Digest</div>
+              <h1 style="margin:6px 0 2px 0; font-size:24px; line-height:1.2;">The week on X</h1>
+              <div style="font-size:14px; color:#6b7280;"><%= h(@result.period_label) %></div>
+            </td>
+          </tr>
+
+          <!-- Stat strip -->
+          <tr>
+            <td style="padding:8px 32px 4px 32px;">
+              <div style="font-size:13px; color:#6b7280; border-top:1px solid #eceef1; border-bottom:1px solid #eceef1; padding:10px 0;">
+                <%= @result.active_count %> of <%= @result.account_count %> accounts active
+                &middot; <%= @result.tweet_count %> posts
+                &middot; <%= @result.article_count %> links shared
+              </div>
+            </td>
+          </tr>
+
+          <!-- Overview (factual, neutral) -->
+          <% unless @result.overview.to_s.strip.empty? %>
+          <tr>
+            <td style="padding:18px 32px 4px 32px; font-size:15px; line-height:1.6; color:#374151;">
+              <%= h(@result.overview) %>
+            </td>
+          </tr>
+          <% end %>
+
+          <!-- Themes: tweets rendered verbatim, no paraphrase -->
+          <% unless @result.themes.empty? %>
+          <tr>
+            <td style="padding:8px 32px 4px 32px;">
+              <h2 style="font-size:13px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7280; margin:24px 0 12px; padding-bottom:8px; border-bottom:1px solid #eceef1;">Themes</h2>
+            </td>
+          </tr>
+          <% @result.themes.each do |theme| %>
+            <tr>
+              <td style="padding:0 32px 4px 32px;">
+                <h3 style="font-size:17px; margin:18px 0 8px;"><%= h(theme.name) %></h3>
+              </td>
+            </tr>
+            <% prev_day = nil %>
+            <% theme_units(theme).each do |unit| %>
+              <% day = unit[:at] ? unit[:at].getlocal.strftime("%a, %b %-d") : nil %>
+              <% if day && day != prev_day %>
+                <tr>
+                  <td style="padding:10px 32px 0 32px;">
+                    <div style="border-top:1px dashed #d1d5db; padding-top:6px; margin-top:4px; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#9ca3af; font-weight:600;">
+                      <%= day %>
+                    </div>
+                  </td>
+                </tr>
+                <% prev_day = day %>
+              <% end %>
+              <% if unit[:type] == :retweet_group %>
+                <% rt = unit[:anchor] %>
+                <tr>
+                  <td style="padding:0 32px 12px 32px;">
+                    <div style="border-left:3px solid #e5e7eb; padding:8px 0 8px 14px; margin:6px 0;">
+                      <div style="font-size:14px; color:#374151;">
+                        <span style="color:#6b7280;">Retweeted by</span>
+                        <% unit[:retweeters].first(6).each_with_index do |h_, i| %><%= author_link(h_) %><%= i < [unit[:retweeters].size, 6].min - 1 ? "," : "" %> <% end %>
+                        <% if unit[:retweeters].size > 6 %>
+                          <span style="color:#9ca3af;"> + <%= unit[:retweeters].size - 6 %> more</span>
+                        <% end %>
+                        <span style="color:#6b7280;">&middot; from</span> <%= author_link(rt.quoted_author) %>
+                      </div>
+                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text) %></div>
+                      <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
+                        <% if (ts = format_time(unit[:at])) %><span><%= ts %></span><% end %>
+                        <% if (link = rt.quoted_permalink || rt.permalink) %>
+                          <% if ts %> &middot; <% end %>
+                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;">View on X &rarr;</a>
+                        <% end %>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              <% else %>
+                <% t = unit[:tweet] %>
+                <tr>
+                  <td style="padding:0 32px 12px 32px;">
+                    <div style="border-left:3px solid #e5e7eb; padding:8px 0 8px 14px; margin:6px 0;">
+                      <div style="font-size:14px; color:#374151;">
+                        <%= author_link(t.author) %>
+                        <% if t.kind == :quote && t.quoted_author %>
+                          <span style="color:#6b7280;">quoting</span> <%= author_link(t.quoted_author) %>
+                        <% end %>
+                      </div>
+                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text) %></div>
+
+                      <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
+                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px; color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text) %></div>
+                      <% end %>
+
+                      <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
+                        <% if (ts = format_time(t.created_at)) %><span><%= ts %></span><% end %>
+                        <% if (link = t.permalink) %>
+                          <% if ts %> &middot; <% end %>
+                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;">View on X &rarr;</a>
+                        <% end %>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              <% end %>
+            <% end %>
+          <% end %>
+          <% end %>
+
+          <!-- Articles & links, grouped by type -->
+          <% unless @result.articles.empty? %>
+          <tr>
+            <td style="padding:8px 32px 4px 32px;">
+              <h2 style="font-size:13px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7280; margin:32px 0 4px; padding-bottom:8px; border-bottom:1px solid #eceef1;">Articles &amp; links</h2>
+            </td>
+          </tr>
+          <% article_groups = @result.articles.group_by(&:type) %>
+          <% %w[long_form short_form news_bulletin other].each do |gt| %>
+            <% group = article_groups[gt] %>
+            <% next unless group && !group.empty? %>
+            <tr>
+              <td style="padding:18px 32px 8px 32px;">
+                <div style="font-size:13px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700; color:<%= type_color(gt) %>;">
+                  <span style="font-size:14px;">&#9679;</span>&nbsp; <%= type_label(gt) %>
+                  <span style="font-size:12px; color:#9ca3af; font-weight:400; margin-left:6px;">&middot; <%= group.size %></span>
+                </div>
+              </td>
+            </tr>
+            <% group.each do |a| %>
+              <tr>
+                <td style="padding:0 32px 14px 32px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #eceef1; border-left:4px solid <%= type_color(a.type) %>; border-radius:10px; overflow:hidden;">
+                    <tr>
+                      <% if a.image %>
+                      <td width="140" valign="top" style="padding:0; background:#f4f5f7;">
+                        <a href="<%= h(a.url) %>" style="display:block;">
+                          <img src="<%= h(a.image) %>" width="140" alt="" style="display:block; width:140px; height:140px; object-fit:cover;">
+                        </a>
+                      </td>
+                      <% else %>
+                      <td width="140" valign="middle" align="center" style="padding:0; background:<%= type_color(a.type) %>; width:140px; height:140px;">
+                        <a href="<%= h(a.url) %>" style="display:block; text-decoration:none; color:#ffffff; padding:50px 8px; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; font-weight:700; opacity:0.9;">
+                          <%= type_label(a.type) %>
+                        </a>
+                      </td>
+                      <% end %>
+                      <td valign="top" style="padding:12px 14px;">
+                        <% if a.site %>
+                          <div style="font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:#9ca3af; margin-bottom:4px;"><%= h(a.site) %></div>
+                        <% end %>
+                        <a href="<%= h(a.url) %>" style="font-size:15px; line-height:1.35; color:#111827; text-decoration:none; font-weight:600;"><%= h(a.title || a.url) %></a>
+                        <% if a.description %>
+                          <div style="font-size:13px; line-height:1.45; color:#6b7280; margin-top:4px;"><%= h(a.description) %></div>
+                        <% end %>
+                        <div style="font-size:12px; color:#6b7280; margin-top:8px;">
+                          Shared by
+                          <% a.sharers.first(6).each_with_index do |s, i| %>
+                            <%= author_link(s) %><%= i < [a.sharers.size, 6].min - 1 ? "," : "" %>
+                          <% end %>
+                          <% if a.sharers.size > 6 %>
+                            <span style="color:#9ca3af;"> + <%= a.sharers.size - 6 %> more</span>
+                          <% end %>
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            <% end %>
+          <% end %>
+          <% end %>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:18px 32px 28px 32px; border-top:1px solid #eceef1; font-size:12px; color:#9ca3af;">
+              Generated by Xtricate so you don't have to open X. Update <code>XTRICATE_ACCOUNTS</code> to change who's included.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

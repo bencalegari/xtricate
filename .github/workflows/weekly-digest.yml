@@ -1,0 +1,28 @@
+name: Weekly X Digest
+
+on:
+  schedule:
+    # 13:00 UTC every Monday (~8am ET / 6am MT). Adjust as you like.
+    - cron: "0 13 * * 1"
+  workflow_dispatch: {} # lets you trigger a run manually from the Actions tab
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true # bundle install + cache gems
+
+      - name: Send digest
+        env:
+          XTRICATE_ACCOUNTS: ${{ secrets.XTRICATE_ACCOUNTS }}
+          XTRICATE_RECIPIENT: ${{ secrets.XTRICATE_RECIPIENT }}
+          TWITTERAPI_IO_KEY: ${{ secrets.TWITTERAPI_IO_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: bundle exec bin/digest

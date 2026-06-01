@@ -1,0 +1,39 @@
+# Non-secret knobs. Secrets live in .env (local) / GitHub Actions secrets (CI).
+
+# How far back each weekly run looks, in days.
+lookback_days: 7
+
+# Claude model used to write the digest. Configurable; sonnet is cheap + capable.
+model: claude-sonnet-4-6
+
+# Max tweets to pull per account per run (safety cap; pagination stops earlier
+# once tweets fall outside the lookback window).
+max_tweets_per_account: 100
+
+# Display name on the "From" line.
+sender_name: Xtricate Digest
+
+# IANA timezone used to display tweet timestamps. Affects both the local Mac run
+# and GitHub Actions (which is UTC by default). Pick what makes sense to read.
+timezone: America/Los_Angeles
+
+# Long-form articles from these outlets win the long_form slots even when
+# they got little engagement — the reader specifically wants to see them.
+# One domain per line; subdomains are matched automatically.
+preferred_long_form_outlets:
+  - jacobin.com
+  - thebaffler.com
+  - newleftreview.org
+  - nplusonemag.com
+  - dissentmagazine.org
+  - thenation.com
+  - currentaffairs.org
+  - bostonreview.net
+  - nybooks.com
+  - harpers.org
+  - theintercept.com
+  - catalyst-journal.com
+  - logicmag.io
+  - protean-mag.com
+  - jewishcurrents.org
+  - inthesetimes.com

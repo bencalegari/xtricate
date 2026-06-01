@@ -1,0 +1,30 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Generated digest output
+/digest.html
+/digest.preview.html
+
+# Legacy: accounts now live in XTRICATE_ACCOUNTS env var
+/accounts.txt
+
+# Scratch directory — smoke test, one-off helpers, account-list dumps
+/tmp/
+
+# Ruby / Bundler
+/vendor/bundle/
+/.bundle/
+*.gem
+
+# Tool state
+/.ruby-lsp/
+/.claude/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
