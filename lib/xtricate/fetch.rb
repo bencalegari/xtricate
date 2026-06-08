@@ -132,6 +132,10 @@ module Xtricate
       in_reply_to = t["inReplyToId"] || t["in_reply_to_status_id_str"] || t["in_reply_to_status_id"]
 
       quoted_src = retweeted || quoted
+      # Second level: the post in quoted_src may itself be a quote tweet (most
+      # commonly a retweet of someone quoting a news link). Capture its nested
+      # quote so the innermost source isn't lost.
+      inner = quoted_src && (quoted_src["quoted_tweet"] || quoted_src["quote"])
       Tweet.new(
         id: t["id"] || t["tweet_id"] || t["id_str"],
         author: author,
@@ -147,6 +151,8 @@ module Xtricate
         quoted_id: quoted_src && (quoted_src["id"] || quoted_src["tweet_id"] || quoted_src["id_str"]),
         quoted_author: quoted_src && dig_author(quoted_src),
         quoted_text: quoted_src && clean_text(quoted_src["text"] || quoted_src["full_text"] || ""),
+        quoted_inner_author: inner && dig_author(inner),
+        quoted_inner_text: inner && clean_text(inner["text"] || inner["full_text"] || ""),
         source: :twitter,
         media: media.uniq { |m| m.thumb || m.url },
         conversation_id: conv_id&.to_s,

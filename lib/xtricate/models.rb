@@ -12,6 +12,11 @@ module Xtricate
   # For :retweet  -> quoted/* holds the original author + text we're amplifying.
   # For :quote    -> text is the author's commentary; quoted/* holds the quoted post.
   #
+  # quoted_inner_* is the second level: when the post in quoted/* is itself a
+  # quote tweet (e.g. a retweet of someone quoting a news link), this holds the
+  # post THAT post quotes, so the digest can show the whole chain rather than
+  # dropping the innermost source. nil when there's no nested quote.
+  #
   # Thread fields (for self-threads only):
   #   conversation_id    — id of the root post in a multi-post conversation
   #   thread_root_id     — id of the first post in this author's self-thread
@@ -24,6 +29,7 @@ module Xtricate
     :id, :author, :kind, :text, :created_at, :url, :urls,
     :like_count, :retweet_count, :reply_count, :quote_count,
     :quoted_id, :quoted_author, :quoted_text,
+    :quoted_inner_author, :quoted_inner_text,
     :source, :media,
     :conversation_id, :thread_root_id, :thread_position, :thread_continuations,
     keyword_init: true

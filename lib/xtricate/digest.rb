@@ -234,6 +234,10 @@ module Xtricate
       if t.quoted_author
         h[:quoted_by] = t.quoted_author
         h[:quoted_text] = t.quoted_text
+        if t.quoted_inner_author
+          h[:quoted_inner_by] = t.quoted_inner_author
+          h[:quoted_inner_text] = t.quoted_inner_text
+        end
       end
       h
     end

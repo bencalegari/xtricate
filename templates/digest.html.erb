@@ -82,6 +82,14 @@
                       </div>
                       <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text) %></div>
                       <%= render_media(rt.media) %>
+                      <% if rt.quoted_inner_text && !rt.quoted_inner_text.empty? %>
+                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
+                          <% if rt.quoted_inner_author %>
+                            <div style="font-size:13px; color:#6b7280;"><span>quoting</span> <%= author_link(rt.quoted_inner_author) %></div>
+                          <% end %>
+                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap; margin-top:2px;"><%= render_tweet_text(rt.quoted_inner_text) %></div>
+                        </div>
+                      <% end %>
                       <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
                         <% if (ts = format_time(unit[:at])) %><span><%= ts %></span><% end %>
                         <% if (link = rt.quoted_permalink || rt.permalink) %>
@@ -118,7 +126,12 @@
                       <%= render_media(t.media) %>
 
                       <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
-                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px; color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text) %></div>
+                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
+                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text) %></div>
+                          <% if t.quoted_inner_text && !t.quoted_inner_text.empty? %>
+                            <div style="border-left:2px solid #e5e7eb; padding:4px 0 4px 10px; margin:6px 0 0; color:#6b7280; font-size:13px; line-height:1.45; white-space:pre-wrap;"><% if t.quoted_inner_author %>quoting <%= author_link(t.quoted_inner_author) %><br><% end %><%= render_tweet_text(t.quoted_inner_text) %></div>
+                          <% end %>
+                        </div>
                       <% end %>
 
                       <% if t.thread_head? && t.thread_continuations %>

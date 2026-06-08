@@ -112,6 +112,10 @@ module Xtricate
 
       external = external_embed(post["embed"])
 
+      # If the reposted post is itself a quote post, capture its nested quote so
+      # the innermost source survives into the digest.
+      _, _, inner_author, inner_text = parse_quote_or_kind(post["embed"])
+
       Tweet.new(
         id: record_key, # use the original post's record key; pairs with quoted_id for dedup
         author: follower,
@@ -127,6 +131,8 @@ module Xtricate
         quoted_id: record_key,
         quoted_author: original_author,
         quoted_text: clean_text(record["text"]),
+        quoted_inner_author: inner_author,
+        quoted_inner_text: inner_text,
         source: :bluesky,
         media: image_media(post["embed"]),
         conversation_id: nil,
