@@ -115,35 +115,55 @@ module Xtricate
     end
 
     # Collapse retweets of the same original tweet into a single render unit, so
-    # we don't repeat the original text once per retweeter. Quote tweets are
-    # never merged (their commentary makes each one unique). Then sort units
-    # chronologically (oldest first) so the reader can follow how a story
-    # evolved within the theme.
+    # we don't repeat the original text once per retweeter. When the original
+    # tweet itself is also present in the theme (a follow posted it AND another
+    # follow retweeted it), the two merge into one unit anchored on the original
+    # — the retweeters are listed alongside its author rather than rendered as a
+    # second, near-identical block. Quote tweets are never merged (their
+    # commentary makes each one unique). Then sort units chronologically (oldest
+    # first) so the reader can follow how a story evolved within the theme.
+    #
+    # Units are keyed by the original tweet's id: a :single original keys on its
+    # own id, and a retweet keys on its quoted_id, so the two land in the same
+    # slot and collapse together regardless of arrival order.
     #
     # Returns an array of hashes:
-    #   { type: :single, tweet: Tweet, at: Time? }
+    #   { type: :single, tweet: Tweet, retweeters: [handle, ...], at: Time? }
     #   { type: :retweet_group, anchor: Tweet, retweeters: [handle, ...], at: Time? }
-    # `at` is the earliest known timestamp (for retweet groups, the time of the
-    # first retweet we saw of that original).
+    # For :single, `at` is the original's timestamp; for :retweet_group it's the
+    # earliest retweet we saw of that original.
     def theme_units(theme)
       units = []
-      rt_index_by_key = {}
+      index_by_key = {}
 
       theme.tweets.each do |t|
         if t.kind == :retweet && t.quoted_id
           key = t.quoted_id.to_s
-          if (i = rt_index_by_key[key])
+          if (i = index_by_key[key])
             unit = units[i]
             unit[:retweeters] << t.author unless unit[:retweeters].include?(t.author)
-            if t.created_at && (unit[:at].nil? || t.created_at < unit[:at])
+            # Only nudge `at` earlier for retweet groups; a :single keeps the
+            # original's own timestamp (which is what its card displays).
+            if unit[:type] == :retweet_group && t.created_at &&
+               (unit[:at].nil? || t.created_at < unit[:at])
               unit[:at] = t.created_at
             end
           else
-            rt_index_by_key[key] = units.size
+            index_by_key[key] = units.size
             units << { type: :retweet_group, anchor: t, retweeters: [t.author], at: t.created_at }
           end
         else
-          units << { type: :single, tweet: t, at: t.created_at }
+          key = t.id.to_s
+          if (i = index_by_key[key]) && units[i][:type] == :retweet_group
+            # We already saw this content via a retweet; now we have the source
+            # tweet itself. Promote to a :single anchored on the original,
+            # carrying over the retweeters we accumulated.
+            old = units[i]
+            units[i] = { type: :single, tweet: t, retweeters: old[:retweeters], at: t.created_at }
+          elsif !index_by_key.key?(key)
+            index_by_key[key] = units.size
+            units << { type: :single, tweet: t, retweeters: [], at: t.created_at }
+          end
         end
       end
 

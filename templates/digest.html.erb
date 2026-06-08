@@ -102,6 +102,14 @@
                         <% if t.kind == :quote && t.quoted_author %>
                           <span style="color:#6b7280;">quoting</span> <%= author_link(t.quoted_author) %>
                         <% end %>
+                        <% rts = unit[:retweeters] %>
+                        <% if rts && !rts.empty? %>
+                          <span style="color:#6b7280;">&middot; retweeted by</span>
+                          <% rts.first(6).each_with_index do |h_, i| %><%= author_link(h_) %><%= i < [rts.size, 6].min - 1 ? "," : "" %> <% end %>
+                          <% if rts.size > 6 %>
+                            <span style="color:#9ca3af;"> + <%= rts.size - 6 %> more</span>
+                          <% end %>
+                        <% end %>
                         <% if t.thread_head? && t.thread_continuations && !t.thread_continuations.empty? %>
                           <span style="display:inline-block; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#7c3aed; background:#f3eaff; padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:1px; font-weight:700;">Thread &middot; <%= 1 + t.thread_continuations.size %></span>
                         <% end %>
