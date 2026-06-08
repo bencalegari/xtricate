@@ -1,12 +1,6 @@
 # Xtricate
 
-A weekly email digest of what the X/Twitter accounts you follow have been up to —
-topics, articles shared, the commentary around them, and notable quote-tweets —
-so you can stop opening X every day.
-
-It pulls tweets via [twitterapi.io](https://twitterapi.io) (no X login, ~$1–2/mo
-for <50 accounts), has Claude write the digest, and emails it from your Gmail.
-Runs weekly on GitHub Actions — nothing to keep running on your machine.
+the twitter company makes me not happy-- thats okay, [ill still keep drinking that garbage](https://x.com/realDonaldTrump/status/258262904091058176?lang=en)
 
 ## How it works
 
@@ -49,13 +43,23 @@ Everything personal lives in `.env` (gitignored locally) or GitHub Actions secre
 # 1. Sanity-check fetching against a few accounts (needs only TWITTERAPI_IO_KEY)
 bin/digest --fetch-only --limit 3
 
-# 2. Generate the digest to a local file — review/tune before any email
+# 2. Generate the digest to a local file and opens it (./digest.html by default, specify with --out path_to.html) — review/tune before any email
 #    (needs TWITTERAPI_IO_KEY + ANTHROPIC_API_KEY)
-bin/digest --dry-run        # writes ./digest.html
+bin/digest --dry-run && open digest.html  
 
 # 3. The real thing: fetch, summarize, and email
 bin/digest
 ```
+
+## Tests
+
+```bash
+bundle exec rspec
+```
+
+Specs live in `spec/` and run offline (no API keys or network). They cover the
+renderer's unit-grouping logic — e.g. collapsing an original tweet and retweets
+of it into a single card.
 
 ## Schedule it (GitHub Actions)
 
