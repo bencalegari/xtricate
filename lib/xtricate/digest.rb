@@ -360,7 +360,9 @@ module Xtricate
         sharers = cluster ? cluster.sharers : []
 
         Article.new(
-          url: pick[:url],
+          # Link to where the shortlink actually landed so the card points at
+          # the article, not at reut.rs/trib.al.
+          url: og.resolved_url || pick[:url],
           type: pick[:type],
           title: og.title,
           image: og.image,
