@@ -1,4 +1,8 @@
 module Xtricate
+  # X/Twitter permalinks go through twitterwebviewer.com, which renders a post
+  # (including video) without a logged-in account. It takes the bare tweet id.
+  X_VIEWER = "https://twitterwebviewer.com/?tweet=".freeze
+
   # A media attachment on a tweet/post: photo, video preview, or animated gif.
   # `thumb` is the small preview URL (used in the digest); `url` is the
   # full-size click-through (for the future "open in browser" path).
@@ -45,20 +49,21 @@ module Xtricate
 
     # Permalink to this post.
     def permalink
-      return url if url
-
       case source
-      when :bluesky then id && author ? "https://bsky.app/profile/#{author}/post/#{id}" : nil
-      else id && author ? "https://x.com/#{author}/status/#{id}" : nil
+      when :bluesky
+        url || (id && author ? "https://bsky.app/profile/#{author}/post/#{id}" : nil)
+      else
+        id ? "#{X_VIEWER}#{id}" : url
       end
     end
 
     def quoted_permalink
-      return nil unless quoted_id && quoted_author
+      return nil unless quoted_id
 
       case source
-      when :bluesky then "https://bsky.app/profile/#{quoted_author}/post/#{quoted_id}"
-      else "https://x.com/#{quoted_author}/status/#{quoted_id}"
+      when :bluesky
+        quoted_author ? "https://bsky.app/profile/#{quoted_author}/post/#{quoted_id}" : nil
+      else "#{X_VIEWER}#{quoted_id}"
       end
     end
 
