@@ -1,6 +1,6 @@
 require "faraday"
 require "uri"
-require "cgi"
+require_relative "entities"
 
 module Xtricate
   # Lightweight Open Graph / Twitter Card scraper. For each article URL we want
@@ -115,12 +115,12 @@ module Xtricate
       pattern = Regexp.escape(key)
       m = html.match(/<meta[^>]+(?:property|name)=["']#{pattern}["'][^>]+content=["']([^"']+)["']/i) ||
           html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']#{pattern}["']/i)
-      m && CGI.unescapeHTML(m[1])
+      m && Entities.decode(m[1])
     end
 
     def html_title(html)
       m = html.match(/<title[^>]*>([^<]+)<\/title>/im)
-      m && CGI.unescapeHTML(m[1])
+      m && Entities.decode(m[1])
     end
 
     def hostname(url)

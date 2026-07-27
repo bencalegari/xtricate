@@ -1,9 +1,9 @@
 require "faraday"
 require "json"
 require "time"
-require "cgi"
 
 require_relative "models"
+require_relative "entities"
 
 module Xtricate
   # Pulls recent posts for each followed Bluesky account using the unauthenticated
@@ -235,7 +235,7 @@ module Xtricate
     end
 
     def clean_text(str)
-      CGI.unescapeHTML(str.to_s).gsub(/\s+/, " ").strip
+      Entities.decode(str).gsub(/\s+/, " ").strip
     end
 
     def parse_time(val)

@@ -1,9 +1,9 @@
 require "faraday"
 require "json"
 require "time"
-require "cgi"
 
 require_relative "models"
+require_relative "entities"
 
 module Xtricate
   # Pulls recent tweets for each followed account from twitterapi.io and
@@ -212,11 +212,11 @@ module Xtricate
         url.include?("twitter.com") || url.include?("x.com/")
     end
 
-    # Twitter's API returns tweet text with HTML entities (&amp;, &lt;, &gt;).
-    # Decode them once here so downstream rendering (which re-escapes) doesn't
-    # double-encode into &amp;amp;.
+    # Twitter's API returns tweet text with HTML entities (&amp;, &lt;, &gt;,
+    # and named ones like &rsquo;). Decode them once here so downstream
+    # rendering (which re-escapes) doesn't double-encode into &amp;amp;.
     def clean_text(str)
-      CGI.unescapeHTML(str.to_s).gsub(/\s+/, " ").strip
+      Entities.decode(str).gsub(/\s+/, " ").strip
     end
 
     def parse_time(val)
