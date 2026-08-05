@@ -155,6 +155,7 @@ module Xtricate
         quoted_inner_text: inner && clean_text(inner["text"] || inner["full_text"] || ""),
         source: :twitter,
         media: media.uniq { |m| m.thumb || m.url },
+        link_map: extract_link_map(t, retweeted, quoted, inner),
         conversation_id: conv_id&.to_s,
         thread_root_id: in_reply_to && conv_id ? nil : nil # filled in by ThreadAssembly later
       )
@@ -203,6 +204,26 @@ module Xtricate
 
         url = u["expanded_url"] || u["unwound_url"] || u["url"] || u["display_url"]
         url unless tco?(url)
+      end
+    end
+
+    def extract_link_map(*sources)
+      sources.compact.each_with_object({}) do |src, map|
+        next unless src.is_a?(Hash)
+
+        entries = Array(src.dig("entities", "urls")) +
+                  Array(src.dig("extendedEntities", "media")) +
+                  Array(src.dig("extended_entities", "media")) +
+                  Array(src.dig("entities", "media"))
+        entries.each do |e|
+          next unless e.is_a?(Hash)
+
+          short = e["url"]
+          expanded = e["expanded_url"] || e["unwound_url"]
+          next if short.nil? || expanded.nil? || !short.include?("t.co/")
+
+          map[short] ||= expanded
+        end
       end
     end
 

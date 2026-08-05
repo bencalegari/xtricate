@@ -3,6 +3,13 @@ module Xtricate
   # (including video) without a logged-in account. It takes the bare tweet id.
   TWITTER_VIEWER = "https://twitterwebviewer.com/?tweet=".freeze
 
+  STATUS_URL = %r{(?:twitter|x)\.com/[^/\s]+/status/(\d+)}.freeze
+
+  def self.viewer_url(url)
+    id = url.to_s[STATUS_URL, 1]
+    id && "#{TWITTER_VIEWER}#{id}"
+  end
+
   # A media attachment on a tweet/post: photo, video preview, or animated gif.
   # `thumb` is the small preview URL (used in the digest); `url` is the
   # full-size click-through (for the future "open in browser" path).
@@ -34,7 +41,7 @@ module Xtricate
     :like_count, :retweet_count, :reply_count, :quote_count,
     :quoted_id, :quoted_author, :quoted_text,
     :quoted_inner_author, :quoted_inner_text,
-    :source, :media,
+    :source, :media, :link_map,
     :conversation_id, :thread_root_id, :thread_position, :thread_continuations,
     keyword_init: true
   ) do

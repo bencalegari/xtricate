@@ -45,7 +45,7 @@ module Xtricate
 
     # Escape tweet text, then turn bare URLs into <a> tags. URLs are matched
     # *after* HTML escaping, so safety is preserved.
-    def render_tweet_text(text)
+    def render_tweet_text(text, tweet = nil)
       escaped = h(text)
       escaped.gsub(%r{(https?://[^\s<]+)}) do |u|
         # Trim trailing punctuation that's likely sentence-final.
@@ -55,8 +55,13 @@ module Xtricate
           trailing = clean[-1] + trailing
           clean = clean[0..-2]
         end
-        %(<a href="#{clean}" style="color:#1d4ed8; text-decoration:none;">#{clean}</a>#{trailing})
+        %(<a href="#{link_href(clean, tweet)}" style="color:#1d4ed8; text-decoration:none;">#{clean}</a>#{trailing})
       end
+    end
+
+    def link_href(url, tweet)
+      expanded = tweet&.link_map&.[](url)
+      Xtricate.viewer_url(expanded || url) || url
     end
 
     def author_link(handle)

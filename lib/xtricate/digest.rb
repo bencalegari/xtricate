@@ -33,7 +33,7 @@ module Xtricate
       end
     end
     Result = Struct.new(
-      :overview, :themes, :articles, :discoveries,
+      :themes, :articles, :discoveries,
       :period_label, :account_count, :active_count,
       :tweet_count, :article_count,
       keyword_init: true
@@ -54,7 +54,6 @@ module Xtricate
       exact shape — nothing else, no prose, no code fences:
 
       {
-        "overview": "<2-3 plain, factual sentences naming the topics that came up this week. Neutral. No editorial.>",
         "themes": [
           {
             "name": "<short topical title, neutral, no opinion>",
@@ -151,7 +150,6 @@ module Xtricate
       articles = build_articles(decision["articles"] || [], clusters)
 
       Result.new(
-        overview: decision["overview"].to_s.strip,
         themes: themes,
         articles: articles,
         discoveries: discoveries,
@@ -310,7 +308,7 @@ module Xtricate
     rescue JSON::ParserError => e
       log "  ! JSON parse failed: #{e.message}"
       log "    raw head: #{candidate[0, 200].inspect}"
-      { "overview" => "", "themes" => [], "articles" => [] }
+      { "themes" => [], "articles" => [] }
     end
 
     def build_themes(raw_themes, tweet_index)

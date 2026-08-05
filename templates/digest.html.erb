@@ -32,15 +32,6 @@
             </td>
           </tr>
 
-          <!-- Overview (factual, neutral) -->
-          <% unless @result.overview.to_s.strip.empty? %>
-          <tr>
-            <td style="padding:18px 32px 4px 32px; font-size:15px; line-height:1.6; color:#374151;">
-              <%= h(@result.overview) %>
-            </td>
-          </tr>
-          <% end %>
-
           <!-- Themes: tweets rendered verbatim, no paraphrase -->
           <% unless @result.themes.empty? %>
           <tr>
@@ -80,14 +71,14 @@
                         <% end %>
                         <span style="color:#6b7280;">&middot; from</span> <%= author_link(rt.quoted_author) %>
                       </div>
-                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text) %></div>
+                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text, rt) %></div>
                       <%= render_media(rt.media) %>
                       <% if rt.quoted_inner_text && !rt.quoted_inner_text.empty? %>
                         <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
                           <% if rt.quoted_inner_author %>
                             <div style="font-size:13px; color:#6b7280;"><span>quoting</span> <%= author_link(rt.quoted_inner_author) %></div>
                           <% end %>
-                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap; margin-top:2px;"><%= render_tweet_text(rt.quoted_inner_text) %></div>
+                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap; margin-top:2px;"><%= render_tweet_text(rt.quoted_inner_text, rt) %></div>
                         </div>
                       <% end %>
                       <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
@@ -122,14 +113,14 @@
                           <span style="display:inline-block; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#7c3aed; background:#f3eaff; padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:1px; font-weight:700;">Thread &middot; <%= 1 + t.thread_continuations.size %></span>
                         <% end %>
                       </div>
-                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text) %></div>
+                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text, t) %></div>
                       <%= render_media(t.media) %>
 
                       <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
                         <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
-                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text) %></div>
+                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text, t) %></div>
                           <% if t.quoted_inner_text && !t.quoted_inner_text.empty? %>
-                            <div style="border-left:2px solid #e5e7eb; padding:4px 0 4px 10px; margin:6px 0 0; color:#6b7280; font-size:13px; line-height:1.45; white-space:pre-wrap;"><% if t.quoted_inner_author %>quoting <%= author_link(t.quoted_inner_author) %><br><% end %><%= render_tweet_text(t.quoted_inner_text) %></div>
+                            <div style="border-left:2px solid #e5e7eb; padding:4px 0 4px 10px; margin:6px 0 0; color:#6b7280; font-size:13px; line-height:1.45; white-space:pre-wrap;"><% if t.quoted_inner_author %>quoting <%= author_link(t.quoted_inner_author) %><br><% end %><%= render_tweet_text(t.quoted_inner_text, t) %></div>
                           <% end %>
                         </div>
                       <% end %>
@@ -137,7 +128,7 @@
                       <% if t.thread_head? && t.thread_continuations %>
                         <% t.thread_continuations.each do |cont| %>
                           <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #e5e7eb;">
-                            <div style="font-size:15px; line-height:1.55; color:#111827; white-space:pre-wrap;"><%= render_tweet_text(cont.text) %></div>
+                            <div style="font-size:15px; line-height:1.55; color:#111827; white-space:pre-wrap;"><%= render_tweet_text(cont.text, cont) %></div>
                             <%= render_media(cont.media) %>
                           </div>
                         <% end %>

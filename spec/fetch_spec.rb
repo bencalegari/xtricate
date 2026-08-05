@@ -79,4 +79,70 @@ RSpec.describe Xtricate::Fetch do
       expect(t.quoted_inner_text).to be_nil
     end
   end
+
+  describe "#normalize link_map" do
+    it "maps t.co shortlinks to their expansions from url and media entities" do
+      raw = {
+        "id" => "300",
+        "author" => { "userName" => "kenklippenstein" },
+        "text" => "worth a read https://t.co/article https://t.co/photo",
+        "entities" => {
+          "urls" => [
+            { "url" => "https://t.co/article", "expanded_url" => "https://www.example.com/p/story" }
+          ]
+        },
+        "extendedEntities" => {
+          "media" => [
+            { "type" => "photo", "url" => "https://t.co/photo",
+              "expanded_url" => "https://x.com/kenklippenstein/status/300/photo/1",
+              "media_url_https" => "https://pbs.twimg.com/media/abc.jpg" }
+          ]
+        }
+      }
+
+      expect(normalize(raw).link_map).to eq(
+        "https://t.co/article" => "https://www.example.com/p/story",
+        "https://t.co/photo"   => "https://x.com/kenklippenstein/status/300/photo/1"
+      )
+    end
+
+    it "collects expansions from the retweeted and quoted posts too" do
+      raw = {
+        "id" => "400",
+        "author" => { "userName" => "DanielDenvir" },
+        "text" => "",
+        "retweeted_tweet" => {
+          "id" => "100",
+          "author" => { "userName" => "bob" },
+          "text" => "these are positions https://t.co/outer",
+          "entities" => {
+            "urls" => [
+              { "url" => "https://t.co/outer", "expanded_url" => "https://x.com/carol/status/50?s=20" }
+            ]
+          },
+          "quoted_tweet" => {
+            "id" => "50",
+            "author" => { "userName" => "carol" },
+            "text" => "carol's original https://t.co/inner",
+            "entities" => {
+              "urls" => [
+                { "url" => "https://t.co/inner", "expanded_url" => "https://www.example.com/inner" }
+              ]
+            }
+          }
+        }
+      }
+
+      expect(normalize(raw).link_map).to eq(
+        "https://t.co/outer" => "https://x.com/carol/status/50?s=20",
+        "https://t.co/inner" => "https://www.example.com/inner"
+      )
+    end
+
+    it "is empty when the payload carries no entities" do
+      raw = { "id" => "500", "author" => { "userName" => "alice" }, "text" => "no links here" }
+
+      expect(normalize(raw).link_map).to eq({})
+    end
+  end
 end

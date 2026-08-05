@@ -110,6 +110,72 @@ RSpec.describe Xtricate::Renderer do
     end
   end
 
+  describe "#render_tweet_text" do
+    def with_links(text, map)
+      renderer.render_tweet_text(text, tweet(id: "1", author: "ken", kind: :original,
+                                             text: text, link_map: map))
+    end
+
+    it "points a t.co that expands to a post at the viewer, keeping the t.co as the text" do
+      html = with_links(
+        "these are positions https://t.co/oDs4KGFv8e",
+        "https://t.co/oDs4KGFv8e" => "https://x.com/RealVanJackson/status/2082569821955539065?s=20"
+      )
+
+      expect(html).to include(
+        %(<a href="https://twitterwebviewer.com/?tweet=2082569821955539065" ) +
+        %(style="color:#1d4ed8; text-decoration:none;">https://t.co/oDs4KGFv8e</a>)
+      )
+    end
+
+    it "uses the viewer for a t.co that expands to a post's photo" do
+      html = with_links(
+        "look https://t.co/zqbtf8c6gy",
+        "https://t.co/zqbtf8c6gy" => "https://x.com/_waleedshahid/status/2084456651588055410/photo/1"
+      )
+
+      expect(html).to include(%(href="https://twitterwebviewer.com/?tweet=2084456651588055410"))
+    end
+
+    it "leaves a t.co that expands to an article pointing at the t.co" do
+      html = with_links(
+        "scoop https://t.co/j7Tgt5fQ9f",
+        "https://t.co/j7Tgt5fQ9f" => "https://www.kenklippenstein.com/p/exclusive-francesca-hong"
+      )
+
+      expect(html).to include(%(href="https://t.co/j7Tgt5fQ9f" style="color:#1d4ed8; text-decoration:none;">https://t.co/j7Tgt5fQ9f</a>))
+    end
+
+    it "leaves an unmapped t.co pointing at the t.co" do
+      html = with_links("mystery https://t.co/unknown", {})
+
+      expect(html).to include(%(href="https://t.co/unknown" style="color:#1d4ed8; text-decoration:none;">https://t.co/unknown</a>))
+    end
+
+    it "sends a bare x.com post link to the viewer" do
+      html = renderer.render_tweet_text("see https://x.com/RealVanJackson/status/2082569821955539065")
+
+      expect(html).to include(
+        %(href="https://twitterwebviewer.com/?tweet=2082569821955539065" ) +
+        %(style="color:#1d4ed8; text-decoration:none;">) +
+        "https://x.com/RealVanJackson/status/2082569821955539065</a>"
+      )
+    end
+
+    it "keeps trailing sentence punctuation outside the link" do
+      html = with_links(
+        "read this (https://t.co/abc).",
+        "https://t.co/abc" => "https://x.com/carol/status/50"
+      )
+
+      expect(html).to include(">https://t.co/abc</a>).")
+    end
+
+    it "escapes the surrounding text" do
+      expect(renderer.render_tweet_text("<script>alert(1)</script>")).not_to include("<script>")
+    end
+  end
+
   describe "timezone handling" do
     let(:at) { Time.parse("2026-06-08 17:30 UTC") }
 
