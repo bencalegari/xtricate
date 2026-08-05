@@ -32,7 +32,7 @@ cp .env.example .env   # API keys only
 
 | Var | Where | Notes |
 | --- | --- | --- |
-| `TWITTERAPI_IO_KEY` | twitterapi.io dashboard → API Key | Add a few $ of balance. Not your X login. |
+| `TWITTERAPI_IO_KEY` | twitterapi.io dashboard → API Key | Add a few $ of balance. Not your Twitter login. |
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | Separate from any Claude subscription; pay-as-you-go. Starts with `sk-ant-`. |
 | `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | myaccount.google.com → Security → App passwords | Requires 2-Step Verification on. Only needed for live email, not `--dry-run`. |
 
@@ -130,7 +130,7 @@ parsing, gist loading, per-subscriber slicing and timezones, and the renderer's 
    `GMAIL_APP_PASSWORD`.
 3. Only `config.yml` is committed; everything personal lives in secrets and gists.
 4. The workflow in `.github/workflows/weekly-digest.yml` runs every Monday. Use the
-   **Actions** tab → *Weekly X Digest* → **Run workflow** to trigger a test run.
+   **Actions** tab → *Weekly Twitter Digest* → **Run workflow** to trigger a test run.
 
 Adjust the day/time by editing the `cron:` line in that workflow. A subscriber whose gist fails to
 load is skipped and the run still delivers to everyone else, then exits nonzero so you see the red X.

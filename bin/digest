@@ -75,7 +75,7 @@ config.validate!(mode: options[:mode], needs_twitter: twitter_handles.any?)
 max_lookback = subscribers.map(&:lookback_days).max
 fetch_since = Time.now - (max_lookback * 24 * 60 * 60)
 
-log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} X + #{bluesky_handles.size} Bluesky account(s), looking back up to #{max_lookback} days."
+log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} Twitter + #{bluesky_handles.size} Bluesky account(s), looking back up to #{max_lookback} days."
 
 # --- Fetch once for everyone (Twitter + Bluesky in parallel) ------------------
 activities = []

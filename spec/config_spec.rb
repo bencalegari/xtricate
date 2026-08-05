@@ -17,7 +17,7 @@ RSpec.describe Xtricate::Config do
     expect { config(**all_keys).validate!(mode: :full) }.not_to raise_error
   end
 
-  it "skips the twitterapi key when nobody follows an X account" do
+  it "skips the twitterapi key when nobody follows a Twitter account" do
     expect { config(ANTHROPIC_API_KEY: "a").validate!(mode: :dry_run, needs_twitter: false) }
       .not_to raise_error
   end

@@ -1,7 +1,7 @@
 module Xtricate
-  # X/Twitter permalinks go through twitterwebviewer.com, which renders a post
+  # Twitter permalinks go through twitterwebviewer.com, which renders a post
   # (including video) without a logged-in account. It takes the bare tweet id.
-  X_VIEWER = "https://twitterwebviewer.com/?tweet=".freeze
+  TWITTER_VIEWER = "https://twitterwebviewer.com/?tweet=".freeze
 
   # A media attachment on a tweet/post: photo, video preview, or animated gif.
   # `thumb` is the small preview URL (used in the digest); `url` is the
@@ -53,7 +53,7 @@ module Xtricate
       when :bluesky
         url || (id && author ? "https://bsky.app/profile/#{author}/post/#{id}" : nil)
       else
-        id ? "#{X_VIEWER}#{id}" : url
+        id ? "#{TWITTER_VIEWER}#{id}" : url
       end
     end
 
@@ -63,7 +63,7 @@ module Xtricate
       case source
       when :bluesky
         quoted_author ? "https://bsky.app/profile/#{quoted_author}/post/#{quoted_id}" : nil
-      else "#{X_VIEWER}#{quoted_id}"
+      else "#{TWITTER_VIEWER}#{quoted_id}"
       end
     end
 

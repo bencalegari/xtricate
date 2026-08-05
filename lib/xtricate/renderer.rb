@@ -4,8 +4,8 @@ require "cgi"
 module Xtricate
   # Wraps the digest data in the HTML email shell. The template renders tweets
   # verbatim from the canonical Tweet objects (no Claude rewriting), with
-  # permalinks to view each on X. Article cards show og:image thumbnails and a
-  # classification badge (long-form / short-form / news bulletin / other).
+  # permalinks to view each on Twitter. Article cards show og:image thumbnails
+  # and a classification badge (long-form / short-form / news bulletin / other).
   class Renderer
     TEMPLATE = File.expand_path("../../templates/digest.html.erb", __dir__)
 
@@ -34,7 +34,7 @@ module Xtricate
     end
 
     def subject(result)
-      "Your X digest — #{result.period_label}"
+      "Your Twitter digest — #{result.period_label}"
     end
 
     # --- Template helpers below (invoked via ERB binding). ---
@@ -68,9 +68,9 @@ module Xtricate
     def type_label(type) = TYPE_LABELS.fetch(type, "Other")
     def type_color(type) = TYPE_COLORS.fetch(type, TYPE_COLORS["other"])
 
-    # "View on X" or "View on Bluesky" depending on a tweet's source.
+    # "View on Twitter" or "View on Bluesky" depending on a tweet's source.
     def view_label(tweet)
-      tweet&.source == :bluesky ? "View on Bluesky" : "View on X"
+      tweet&.source == :bluesky ? "View on Bluesky" : "View on Twitter"
     end
 
     # Inline media thumbnails for tweet/post cards. Up to 4 per card, capped to
@@ -100,7 +100,7 @@ module Xtricate
 
     # Same idea for Discovery rows.
     def view_source_label(source)
-      source == :bluesky ? "Bluesky" : "X"
+      source == :bluesky ? "Bluesky" : "Twitter"
     end
 
     # Time-of-day stamp for tweet cards (e.g. "11:45am"). The date is already

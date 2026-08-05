@@ -44,7 +44,7 @@ module Xtricate
     MAX_LONG_FORM = 3
 
     SYSTEM_PROMPT = <<~SYS.freeze
-      You organize a weekly digest of X/Twitter activity. You are NOT a
+      You organize a weekly digest of Twitter activity. You are NOT a
       summarizer. The reader will see the original tweet text rendered under
       each theme — do NOT paraphrase, interpret, or characterize what people
       think. Your only job is to GROUP tweets and RANK shared links.
@@ -244,7 +244,7 @@ module Xtricate
 
     # Tally non-followed accounts that the followed accounts engaged with this
     # week (retweeted, quoted). The reader uses this to grow their follow list
-    # without ever opening X/Bluesky.
+    # without ever opening Twitter/Bluesky.
     def discover_accounts(all_tweets, activities)
       followed = activities.each_with_object({}) { |a, h| h[[(a.handle || "").downcase, a.source]] = true }
       tally = Hash.new { |h, k| h[k] = { count: 0, sources: [], by: {} } }
