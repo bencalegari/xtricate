@@ -46,11 +46,19 @@ module Xtricate
       @open_timeout = open_timeout
       @max_redirects = max_redirects
       @logger = logger
+      @cache = {}
+      @cache_lock = Mutex.new
     end
 
-    # Returns Array<Result> in the same order as urls.
     def fetch_many(urls)
-      urls.map { |u| Thread.new { fetch(u) } }.map(&:value)
+      urls.map { |u| Thread.new { fetch_cached(u) } }.map(&:value)
+    end
+
+    def fetch_cached(url)
+      hit = @cache_lock.synchronize { @cache[url] }
+      return hit if hit
+
+      fetch(url).tap { |res| @cache_lock.synchronize { @cache[url] = res } }
     end
 
     def fetch(url)

@@ -109,4 +109,50 @@ RSpec.describe Xtricate::Renderer do
       expect(units.first[:at]).to eq(Time.parse("2026-06-08 10:05"))
     end
   end
+
+  describe "timezone handling" do
+    let(:at) { Time.parse("2026-06-08 17:30 UTC") }
+
+    def in_zone(zone) = described_class.new(timezone: zone)
+
+    it "stamps a post in the subscriber's own timezone, not the process's" do
+      expect(in_zone("America/Los_Angeles").format_time(at)).to eq("10:30am")
+      expect(in_zone("America/New_York").format_time(at)).to eq("1:30pm")
+    end
+
+    it "dates the day divider in the subscriber's own timezone" do
+      midnight_utc = Time.parse("2026-06-09 03:00 UTC")
+
+      expect(in_zone("America/Los_Angeles").format_day(midnight_utc)).to eq("Mon, Jun 8")
+      expect(in_zone("America/New_York").format_day(midnight_utc)).to eq("Mon, Jun 8")
+      expect(in_zone("UTC").format_day(midnight_utc)).to eq("Tue, Jun 9")
+    end
+
+    it "restores the process timezone afterward" do
+      original = ENV.fetch("TZ", nil)
+      ENV["TZ"] = "America/Chicago"
+
+      in_zone("Asia/Tokyo").format_time(at)
+
+      expect(ENV.fetch("TZ", nil)).to eq("America/Chicago")
+    ensure
+      original.nil? ? ENV.delete("TZ") : ENV["TZ"] = original
+    end
+
+    it "leaves the process timezone unset if it started unset" do
+      original = ENV.fetch("TZ", nil)
+      ENV.delete("TZ")
+
+      in_zone("Asia/Tokyo").format_time(at)
+
+      expect(ENV).not_to have_key("TZ")
+    ensure
+      ENV["TZ"] = original unless original.nil?
+    end
+
+    it "returns nil for a missing timestamp" do
+      expect(in_zone("UTC").format_time(nil)).to be_nil
+      expect(in_zone("UTC").format_day(nil)).to be_nil
+    end
+  end
 end

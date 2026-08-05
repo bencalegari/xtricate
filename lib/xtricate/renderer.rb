@@ -23,8 +23,9 @@ module Xtricate
       "other"         => "#525252"  # gray — fallback
     }.freeze
 
-    def initialize(template_path: TEMPLATE)
+    def initialize(template_path: TEMPLATE, timezone: nil)
       @template = ERB.new(File.read(template_path, encoding: "UTF-8"), trim_mode: "-")
+      @timezone = timezone
     end
 
     def render(result)
@@ -104,14 +105,26 @@ module Xtricate
 
     # Time-of-day stamp for tweet cards (e.g. "11:45am"). The date is already
     # carried by the day divider above the unit, so we don't repeat it here.
-    # Uses ENV["TZ"] (set from config.timezone in bin/digest) so the same tweet
-    # displays consistently on Mac and on GitHub Actions (UTC by default).
     def format_time(t)
+      in_zone(t) { |local| local.strftime("%-l:%M%p").sub("AM", "am").sub("PM", "pm") }
+    end
+
+    def format_day(t)
+      in_zone(t) { |local| local.strftime("%a, %b %-d") }
+    end
+
+    def in_zone(t)
       return nil if t.nil?
 
-      t.getlocal.strftime("%-l:%M%p").sub("AM", "am").sub("PM", "pm")
+      previous = ENV["TZ"]
+      ENV["TZ"] = @timezone if @timezone
+      yield t.getlocal
     rescue StandardError
       nil
+    ensure
+      if @timezone
+        previous.nil? ? ENV.delete("TZ") : ENV["TZ"] = previous
+      end
     end
 
     # Collapse retweets of the same original tweet into a single render unit, so

@@ -7,6 +7,9 @@ $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 # point (which pulls in the anthropic SDK et al).
 require "xtricate/models"
 require "xtricate/renderer"
+require "xtricate/subscriber"
+require "xtricate/subscriber_source"
+require "xtricate/activity_slice"
 
 RSpec.configure do |config|
   config.expect_with(:rspec) { |c| c.syntax = :expect }

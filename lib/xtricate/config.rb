@@ -1,15 +1,15 @@
 require "yaml"
 
 module Xtricate
-  # Loads non-secret knobs from config.yml and secrets from ENV (populated by
-  # dotenv locally, or GitHub Actions secrets in CI). Validates what's needed
-  # for the requested mode so failures are loud and early.
+  # Loads non-secret global knobs from config.yml and shared secrets from ENV
+  # (populated by dotenv locally, or GitHub Actions secrets in CI).
   class Config
     attr_reader :lookback_days, :model, :max_tweets_per_account,
-                :recipient, :sender_name, :timezone,
-                :preferred_long_form_outlets, :accounts, :bluesky_accounts,
+                :sender_name, :timezone,
+                :preferred_long_form_outlets,
                 :twitterapi_key, :anthropic_key,
-                :gmail_address, :gmail_app_password
+                :gmail_address, :gmail_app_password,
+                :subscribers_raw
 
     def self.load(root: Dir.pwd)
       yml = YAML.safe_load_file(File.join(root, "config.yml")) || {}
@@ -21,7 +21,6 @@ module Xtricate
       @model                  = yml.fetch("model", "claude-sonnet-4-6")
       @max_tweets_per_account = Integer(yml.fetch("max_tweets_per_account", 100))
       @sender_name            = yml.fetch("sender_name", "Xtricate Digest")
-      @recipient              = ENV["XTRICATE_RECIPIENT"]
       @timezone               = yml.fetch("timezone", "America/New_York")
       @preferred_long_form_outlets = Array(yml["preferred_long_form_outlets"]).map { |h| h.to_s.downcase.strip }.reject(&:empty?)
 
@@ -29,30 +28,23 @@ module Xtricate
       @anthropic_key     = ENV["ANTHROPIC_API_KEY"]
       @gmail_address     = ENV["GMAIL_ADDRESS"]
       @gmail_app_password = ENV["GMAIL_APP_PASSWORD"]
-      @accounts          = self.class.parse_accounts(ENV["XTRICATE_ACCOUNTS"])
-      @bluesky_accounts  = self.class.parse_accounts(ENV["XTRICATE_BLUESKY_ACCOUNTS"])
+      @subscribers_raw   = ENV["XTRICATE_SUBSCRIBERS"]
     end
 
-    # The cutoff time; tweets older than this are ignored.
     def since
       Time.now - (lookback_days * 24 * 60 * 60)
     end
 
-    # Validate the credentials/config required for a given run mode.
     # mode: :fetch_only, :dry_run, or :full
-    def validate!(mode:)
+    def validate!(mode:, needs_twitter: true)
       errs = []
-      if accounts.empty? && bluesky_accounts.empty?
-        errs << "set XTRICATE_ACCOUNTS and/or XTRICATE_BLUESKY_ACCOUNTS to a comma- or newline-separated list of handles"
-      end
-      errs << "TWITTERAPI_IO_KEY is not set" if accounts.any? && blank?(twitterapi_key)
+      errs << "TWITTERAPI_IO_KEY is not set" if needs_twitter && blank?(twitterapi_key)
 
       if %i[dry_run full].include?(mode)
         errs << "ANTHROPIC_API_KEY is not set" if blank?(anthropic_key)
       end
 
       if mode == :full
-        errs << "XTRICATE_RECIPIENT is not set" if blank?(recipient)
         errs << "GMAIL_ADDRESS is not set" if blank?(gmail_address)
         errs << "GMAIL_APP_PASSWORD is not set" if blank?(gmail_app_password)
       end
@@ -62,13 +54,16 @@ module Xtricate
       self
     end
 
-    # Parse XTRICATE_ACCOUNTS — accepts comma- and/or newline-separated handles,
-    # tolerates leading "@", ignores blank lines and lines starting with "#".
     def self.parse_accounts(raw)
-      return [] if raw.nil? || raw.to_s.strip.empty?
+      entries =
+        case raw
+        when nil then []
+        when Array then raw
+        else raw.to_s.split(/[,\n]/)
+        end
 
-      raw.split(/[,\n]/).filter_map do |entry|
-        entry = entry.strip
+      entries.filter_map do |entry|
+        entry = entry.to_s.strip
         next if entry.empty? || entry.start_with?("#")
 
         entry.delete_prefix("@")

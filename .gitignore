@@ -3,11 +3,15 @@
 .env.local
 .env.*.local
 
+# Your own subscriber settings — never commit (this repo is public)
+/subscribers.local.yml
+
 # Generated digest output
 /digest.html
 /digest.preview.html
+/digest-subscriber-*.html
 
-# Legacy: accounts now live in XTRICATE_ACCOUNTS env var
+# Legacy: accounts now live in subscribers.local.yml / subscriber gists
 /accounts.txt
 
 # Scratch directory — smoke test, one-off helpers, account-list dumps

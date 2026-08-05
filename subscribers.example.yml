@@ -1,0 +1,11 @@
+- email: you@example.com
+  accounts:
+    - paulg
+    - karpathy
+  bluesky_accounts:
+    - pfrazee.com
+  timezone: America/Los_Angeles
+  lookback_days: 7
+
+- email: friend@example.com
+  accounts: karpathy, simonw

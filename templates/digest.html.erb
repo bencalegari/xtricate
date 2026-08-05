@@ -56,7 +56,7 @@
             </tr>
             <% prev_day = nil %>
             <% theme_units(theme).each do |unit| %>
-              <% day = unit[:at] ? unit[:at].getlocal.strftime("%a, %b %-d") : nil %>
+              <% day = format_day(unit[:at]) %>
               <% if day && day != prev_day %>
                 <tr>
                   <td style="padding:10px 32px 0 32px;">

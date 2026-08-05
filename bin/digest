@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "optparse"
+require "fileutils"
 
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
@@ -17,42 +18,73 @@ end
 
 require "xtricate"
 
-options = { mode: :full, out: File.join(ROOT, "digest.html"), limit: nil }
+options = {
+  mode: :full,
+  out: File.join(ROOT, "digest.html"),
+  out_dir: nil,
+  limit: nil,
+  subscribers: nil,
+  only: nil,
+  verbose: false
+}
 
 parser = OptionParser.new do |o|
   o.banner = "Usage: bin/digest [options]"
-  o.on("--dry-run", "Render the digest to an HTML file instead of emailing") { options[:mode] = :dry_run }
+  o.on("--dry-run", "Render each digest to an HTML file instead of emailing") { options[:mode] = :dry_run }
   o.on("--fetch-only", "Fetch + print a summary; skip Claude and email") { options[:mode] = :fetch_only }
-  o.on("--limit N", Integer, "Only process the first N accounts (for testing)") { |n| options[:limit] = n }
-  o.on("--out FILE", "Output path for --dry-run (default: digest.html)") { |f| options[:out] = f }
+  o.on("--limit N", Integer, "Only process the first N accounts per subscriber (for testing)") { |n| options[:limit] = n }
+  o.on("--out FILE", "Output path for --dry-run with a single subscriber (default: digest.html)") { |f| options[:out] = f }
+  o.on("--out-dir DIR", "Directory for --dry-run output when there are several subscribers") { |d| options[:out_dir] = d }
+  o.on("--subscribers FILE", "YAML subscriber list (default: subscribers.local.yml, else the XTRICATE_SUBSCRIBERS secret)") { |f| options[:subscribers] = f }
+  o.on("--only ID_OR_EMAIL", "Run for a single subscriber (id like subscriber-2, or their email)") { |s| options[:only] = s }
+  o.on("--verbose", "Print handles and recipient addresses (never use in CI: public logs)") { options[:verbose] = true }
   o.on("-h", "--help", "Show this help") { puts o; exit }
 end
 parser.parse!(ARGV)
 
 log = $stdout
 config = Xtricate::Config.load(root: ROOT)
-config.validate!(mode: options[:mode])
-# Ruby uses TZ for local-time conversion; set it from config so tweet timestamps
-# render in the configured zone on both local runs and GitHub Actions (UTC by default).
 ENV["TZ"] = config.timezone
 
-twitter_handles = config.accounts
-bluesky_handles = config.bluesky_accounts
-if options[:limit]
-  twitter_handles = twitter_handles.first(options[:limit])
-  bluesky_handles = bluesky_handles.first(options[:limit])
-end
-total_handles = twitter_handles.size + bluesky_handles.size
-log.puts "Xtricate: #{twitter_handles.size} X + #{bluesky_handles.size} Bluesky = #{total_handles} account(s), looking back #{config.lookback_days} days (since #{config.since.strftime('%b %-d')})."
+resolution = Xtricate::SubscriberSource.resolve(
+  config: config, root: ROOT, path: options[:subscribers], logger: log
+)
+subscribers = resolution.subscribers
 
-# --- Fetch (Twitter + Bluesky in parallel) -----------------------------------
+if options[:only]
+  wanted = options[:only].strip.downcase
+  subscribers = subscribers.select { |s| s.id == wanted || s.email.downcase == wanted }
+  abort "No subscriber matches #{options[:only].inspect}." if subscribers.empty?
+end
+
+if options[:limit]
+  subscribers = subscribers.map do |s|
+    s.dup.tap do |c|
+      c.accounts = c.accounts.first(options[:limit])
+      c.bluesky_accounts = c.bluesky_accounts.first(options[:limit])
+    end
+  end
+end
+
+verbose = options[:verbose] && !ENV["GITHUB_ACTIONS"]
+
+twitter_handles = subscribers.flat_map(&:accounts).uniq
+bluesky_handles = subscribers.flat_map(&:bluesky_accounts).uniq
+config.validate!(mode: options[:mode], needs_twitter: twitter_handles.any?)
+
+max_lookback = subscribers.map(&:lookback_days).max
+fetch_since = Time.now - (max_lookback * 24 * 60 * 60)
+
+log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} X + #{bluesky_handles.size} Bluesky account(s), looking back up to #{max_lookback} days."
+
+# --- Fetch once for everyone (Twitter + Bluesky in parallel) ------------------
 activities = []
 
 twitter_thread = nil
 if twitter_handles.any?
   twitter_fetcher = Xtricate::Fetch.new(
     api_key: config.twitterapi_key,
-    since: config.since,
+    since: fetch_since,
     max_per_account: config.max_tweets_per_account,
     logger: log
   )
@@ -65,7 +97,7 @@ end
 bluesky_thread = nil
 if bluesky_handles.any?
   bluesky_fetcher = Xtricate::BlueskyFetch.new(
-    since: config.since,
+    since: fetch_since,
     max_per_account: config.max_tweets_per_account,
     logger: log
   )
@@ -78,62 +110,100 @@ end
 activities.concat(twitter_thread.value) if twitter_thread
 activities.concat(bluesky_thread.value) if bluesky_thread
 
-# Assemble self-threads on each account before downstream processing.
-Xtricate::ThreadAssembly.assemble!(activities)
-
 total = activities.sum { |a| (a.tweets || []).size }
 log.puts "Fetched #{total} post(s) across #{activities.count { |a| !a.empty? }} active account(s)."
 
 if options[:mode] == :fetch_only
-  activities.each do |a|
-    next if a.empty?
+  subscribers.each do |sub|
+    slice = Xtricate::ActivitySlice.for(sub, activities)
+    posts = slice.sum { |a| a.tweets.size }
+    log.puts "\n[#{sub.id}] #{posts} post(s) across #{slice.count { |a| !a.empty? }} active account(s)."
+    next unless verbose
 
-    src_tag = a.source == :bluesky ? "bsky" : "x"
-    log.puts "\n[#{src_tag}] @#{a.handle} — #{a.tweets.size} post(s):"
-    a.tweets.first(5).each do |t|
-      tag = t.kind == :original ? "" : "[#{t.kind}] "
-      thread = t.thread_head? ? "[thread+#{(t.thread_continuations || []).size}] " : ""
-      mt = t.media && !t.media.empty? ? " (#{t.media.size}img)" : ""
-      links = t.urls.empty? ? "" : "  (#{t.urls.size} link#{'s' if t.urls.size != 1})"
-      log.puts "  #{tag}#{thread}#{(t.text.empty? ? "(no commentary)" : t.text[0, 120])}#{mt}#{links}"
+    slice.each do |a|
+      next if a.empty?
+
+      src_tag = a.source == :bluesky ? "bsky" : "x"
+      log.puts "  [#{src_tag}] @#{a.handle} — #{a.tweets.size} post(s):"
+      a.tweets.first(5).each do |t|
+        tag = t.kind == :original ? "" : "[#{t.kind}] "
+        thread = t.thread_head? ? "[thread+#{(t.thread_continuations || []).size}] " : ""
+        mt = t.media && !t.media.empty? ? " (#{t.media.size}img)" : ""
+        links = t.urls.empty? ? "" : "  (#{t.urls.size} link#{'s' if t.urls.size != 1})"
+        log.puts "    #{tag}#{thread}#{(t.text.empty? ? "(no commentary)" : t.text[0, 120])}#{mt}#{links}"
+      end
     end
   end
   log.puts "\nfetch-only done."
   exit 0
 end
 
-if total.zero?
-  log.puts "No tweets in the window — nothing to send. Exiting."
-  exit 0
+if options[:mode] == :dry_run && options[:out_dir]
+  FileUtils.mkdir_p(options[:out_dir])
 end
 
-# --- Summarize ---------------------------------------------------------------
-digest = Xtricate::Digest.new(
-  api_key: config.anthropic_key,
-  model: config.model,
-  since: config.since,
-  lookback_days: config.lookback_days,
-  preferred_outlets: config.preferred_long_form_outlets,
-  logger: log
-)
-result = digest.build(activities)
+# --- Summarize, render, and send per subscriber -------------------------------
+og_fetcher = Xtricate::OgFetch.new(logger: verbose ? log : nil)
+mailer =
+  if options[:mode] == :full
+    Xtricate::Mailer.new(
+      gmail_address: config.gmail_address,
+      gmail_app_password: config.gmail_app_password,
+      sender_name: config.sender_name
+    )
+  end
 
-# --- Render ------------------------------------------------------------------
-renderer = Xtricate::Renderer.new
-html = renderer.render(result)
-subject = renderer.subject(result)
+failures = []
+skipped = 0
 
-if options[:mode] == :dry_run
-  File.write(options[:out], html)
-  log.puts "Wrote digest to #{options[:out]} (open it in a browser). Subject would be: #{subject.inspect}"
-  exit 0
+subscribers.each do |sub|
+  slice = Xtricate::ActivitySlice.for(sub, activities)
+  posts = slice.sum { |a| a.tweets.size }
+
+  if posts.zero?
+    log.puts "[#{sub.id}] no posts in their #{sub.lookback_days}-day window — skipping."
+    skipped += 1
+    next
+  end
+
+  digest = Xtricate::Digest.new(
+    api_key: config.anthropic_key,
+    model: config.model,
+    since: sub.since,
+    lookback_days: sub.lookback_days,
+    preferred_outlets: config.preferred_long_form_outlets,
+    og_fetcher: og_fetcher,
+    logger: log
+  )
+  result = digest.build(slice)
+
+  renderer = Xtricate::Renderer.new(timezone: sub.timezone)
+  html = renderer.render(result)
+  subject = renderer.subject(result)
+
+  if options[:mode] == :dry_run
+    path =
+      if options[:out_dir]
+        File.join(options[:out_dir], "digest-#{sub.id}.html")
+      elsif subscribers.size == 1
+        options[:out]
+      else
+        File.join(ROOT, "digest-#{sub.id}.html")
+      end
+    File.write(path, html)
+    log.puts "[#{sub.id}] wrote #{path} (#{posts} post(s), #{result.themes.size} theme(s)). Subject: #{subject.inspect}"
+    next
+  end
+
+  mailer.deliver(to: sub.email, subject: subject, html: html)
+  log.puts "[#{sub.id}] sent — #{posts} post(s), #{result.themes.size} theme(s)#{verbose ? " → #{sub.email}" : ''}."
+rescue StandardError => e
+  failures << [sub.id, "#{e.class}: #{e.message}"]
+  log.puts "[#{sub.id}] FAILED — #{e.class}: #{e.message}"
 end
 
-# --- Send --------------------------------------------------------------------
-mailer = Xtricate::Mailer.new(
-  gmail_address: config.gmail_address,
-  gmail_app_password: config.gmail_app_password,
-  sender_name: config.sender_name
-)
-mailer.deliver(to: config.recipient, subject: subject, html: html)
-log.puts "Sent digest to #{config.recipient}."
+resolution.failures.each { |id, msg| log.puts "#{id} could not be loaded: #{msg}" }
+
+sent = subscribers.size - failures.size - skipped
+log.puts "Done: #{sent} delivered, #{skipped} empty, #{failures.size} failed."
+exit 1 if failures.any? || resolution.failures.any?

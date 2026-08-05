@@ -129,4 +129,29 @@ RSpec.describe Xtricate::OgFetch do
       expect(result.image).to eq("https://news.example.com/hero.jpg")
     end
   end
+
+  describe "#fetch_many" do
+    it "scrapes a URL once even when several batches ask for it" do
+      url = "https://news.example.com/story"
+      allow(og).to receive(:fetch).with(url)
+        .and_return(described_class::Result.new(url: url, title: "Story"))
+
+      first = og.fetch_many([url])
+      second = og.fetch_many([url])
+
+      expect(og).to have_received(:fetch).once
+      expect(second.first).to be(first.first)
+    end
+
+    it "returns results in the order it was asked for them" do
+      %w[a b].each do |slug|
+        allow(og).to receive(:fetch).with("https://example.com/#{slug}")
+          .and_return(described_class::Result.new(url: "https://example.com/#{slug}", title: slug))
+      end
+
+      results = og.fetch_many(%w[https://example.com/b https://example.com/a])
+
+      expect(results.map(&:title)).to eq(%w[b a])
+    end
+  end
 end
