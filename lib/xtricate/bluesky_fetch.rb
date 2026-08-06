@@ -245,7 +245,7 @@ module Xtricate
     end
 
     def clean_text(str)
-      Entities.decode(str).gsub(/\s+/, " ").strip
+      Entities.decode(str).gsub(/[[:space:]]+/, " ").strip
     end
 
     def parse_time(val)

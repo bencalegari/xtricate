@@ -15,6 +15,11 @@ module Xtricate
   # full-size click-through (for the future "open in browser" path).
   MediaItem = Struct.new(:type, :url, :thumb, :alt, keyword_init: true)
 
+  # Twitter's own scrape of a shared link, handed to us with the tweet. Paywalled
+  # outlets that 401 our scraper still serve Twitter, so this is often the only
+  # place the real headline exists. `url` is the expanded article URL.
+  LinkPreview = Struct.new(:url, :title, :description, :image, :site, keyword_init: true)
+
   # A single post from a followed account, normalized from twitterapi.io OR
   # Bluesky's getAuthorFeed. `source` distinguishes them so the renderer can
   # build the right permalinks and badges. The shared model lets the rest of
@@ -41,7 +46,7 @@ module Xtricate
     :like_count, :retweet_count, :reply_count, :quote_count,
     :quoted_id, :quoted_author, :quoted_text,
     :quoted_inner_author, :quoted_inner_text,
-    :source, :media, :link_map,
+    :source, :media, :link_map, :card,
     :conversation_id, :thread_root_id, :thread_position, :thread_continuations,
     keyword_init: true
   ) do

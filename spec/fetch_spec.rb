@@ -123,6 +123,82 @@ RSpec.describe Xtricate::Fetch do
     end
   end
 
+  describe "#normalize card" do
+    def card_tweet(card, entities: nil)
+      raw = { "id" => "300", "author" => { "userName" => "AntonJaegermm" },
+              "text" => "wild story https://t.co/V1llVgJkHt", "card" => card }
+      raw["entities"] = entities if entities
+      normalize(raw)
+    end
+
+    def wsj_card
+      { "url" => "https://t.co/V1llVgJkHt",
+        "binding_values" => [
+          { "key" => "title",
+            "value" => { "string_value" => "His Wedding Guests Were Arriving—Just as His $45 Billion Fund Was Falling Apart " } },
+          { "key" => "description", "value" => { "string_value" => "Hailed as the &lsquo;Nostradamus of AI.&rsquo;" } },
+          { "key" => "vanity_url", "value" => { "string_value" => "wsj.com" } },
+          { "key" => "thumbnail_image", "value" => { "image_value" => { "url" => "https://pbs.twimg.com/card_img/small.jpg" } } },
+          { "key" => "photo_image_full_size_large", "value" => { "image_value" => { "url" => "https://pbs.twimg.com/card_img/large.jpg" } } }
+        ] }
+    end
+
+    let(:entities) do
+      { "urls" => [{ "url" => "https://t.co/V1llVgJkHt",
+                     "expanded_url" => "https://www.wsj.com/finance/leopold-aschenbrenner-597633d3?reflink=e2twmkts" }] }
+    end
+
+    it "keeps the headline, description, and largest image Twitter scraped" do
+      card = card_tweet(wsj_card, entities: entities).card
+
+      expect(card.title).to eq("His Wedding Guests Were Arriving—Just as His $45 Billion Fund Was Falling Apart")
+      expect(card.description).to eq("Hailed as the ‘Nostradamus of AI.’")
+      expect(card.image).to eq("https://pbs.twimg.com/card_img/large.jpg")
+      expect(card.site).to eq("wsj.com")
+    end
+
+    it "trims the non-breaking space Twitter pads card titles with" do
+      card = { "url" => "https://t.co/V1llVgJkHt",
+               "binding_values" => [{ "key" => "title",
+                                      "value" => { "string_value" => "A headline\u00a0" } }] }
+
+      expect(card_tweet(card, entities: entities).card.title).to eq("A headline")
+    end
+
+    it "expands the card's t.co into the article URL the digest clusters on" do
+      card = card_tweet(wsj_card, entities: entities).card
+
+      expect(card.url).to eq("https://www.wsj.com/finance/leopold-aschenbrenner-597633d3?reflink=e2twmkts")
+    end
+
+    it "ignores a card whose link never resolves past t.co" do
+      expect(card_tweet(wsj_card).card).to be_nil
+    end
+
+    it "reads binding_values handed over as a hash instead of a list" do
+      card = { "url" => "https://t.co/V1llVgJkHt",
+               "binding_values" => { "title" => { "string_value" => "A headline" } } }
+
+      expect(card_tweet(card, entities: entities).card.title).to eq("A headline")
+    end
+
+    it "is nil when the tweet shared no link" do
+      raw = { "id" => "400", "author" => { "userName" => "alice" }, "text" => "no card here" }
+
+      expect(normalize(raw).card).to be_nil
+    end
+
+    it "takes the card off the retweeted post when the follower only retweeted" do
+      raw = { "id" => "500", "author" => { "userName" => "willmenaker" },
+              "text" => "RT @AntonJaegermm: wild story https://t.co/V1llVgJkHt",
+              "retweeted_tweet" => { "id" => "300", "author" => { "userName" => "AntonJaegermm" },
+                                     "text" => "wild story https://t.co/V1llVgJkHt",
+                                     "card" => wsj_card, "entities" => entities } }
+
+      expect(normalize(raw).card.title).to start_with("His Wedding Guests")
+    end
+  end
+
   describe "#normalize link_map" do
     it "maps t.co shortlinks to their expansions from url and media entities" do
       raw = {

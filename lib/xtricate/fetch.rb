@@ -18,6 +18,10 @@ module Xtricate
     BASE_URL = "https://api.twitterapi.io".freeze
     ENDPOINT = "/twitter/user/last_tweets".freeze
     RT_PREFIX = /\ART @([A-Za-z0-9_]{1,15}):\s*/.freeze
+    CARD_IMAGE_KEYS = %w[
+      photo_image_full_size_large summary_photo_image_large thumbnail_image_large
+      photo_image_full_size summary_photo_image thumbnail_image
+    ].freeze
 
     def initialize(api_key:, since:, max_per_account: 100, conn: nil, logger: nil)
       @api_key = api_key
@@ -150,6 +154,8 @@ module Xtricate
       media = media.uniq { |mi| mi.thumb || mi.url }
       return nil if quoted_text.nil? && text.empty? && media.empty? && urls.empty?
 
+      link_map = extract_link_map(t, retweeted, quoted, inner)
+
       Tweet.new(
         id: presence(t["id"] || t["tweet_id"] || t["id_str"]),
         author: author,
@@ -169,7 +175,8 @@ module Xtricate
         quoted_inner_text: presence(inner && clean_text(inner["text"] || inner["full_text"] || "")),
         source: :twitter,
         media: media,
-        link_map: extract_link_map(t, retweeted, quoted, inner),
+        link_map: link_map,
+        card: extract_card([t, retweeted, quoted, inner], link_map),
         conversation_id: conv_id&.to_s,
         thread_root_id: in_reply_to && conv_id ? nil : nil # filled in by ThreadAssembly later
       )
@@ -221,6 +228,54 @@ module Xtricate
       end
     end
 
+    # Twitter's card for the link this tweet shared: real headline, description,
+    # and preview image, already scraped by Twitter. The card's own url is the
+    # t.co shortlink, so expand it through the tweet's link map to get the
+    # article URL the digest clusters on.
+    def extract_card(sources, link_map)
+      sources.compact.each do |src|
+        next unless src.is_a?(Hash)
+
+        card = src["card"]
+        next unless card.is_a?(Hash)
+
+        values = card_values(card)
+        title = presence(clean_text(values["title"]))
+        next if title.nil?
+
+        short = values["card_url"] || card["url"]
+        url = presence(link_map[short] || short)
+        next if url.nil? || tco?(url)
+
+        return LinkPreview.new(
+          url: url,
+          title: title,
+          description: presence(clean_text(values["description"])),
+          image: presence(CARD_IMAGE_KEYS.filter_map { |k| presence(values[k]) }.first),
+          site: presence(values["vanity_url"] || values["domain"])
+        )
+      end
+      nil
+    end
+
+    # binding_values arrives either as a list of {key:, value:} pairs or as a
+    # hash keyed by name, depending on the endpoint. Flatten both to name => string.
+    def card_values(card)
+      raw = card["binding_values"]
+      pairs =
+        case raw
+        when Array then raw.filter_map { |bv| [bv["key"], bv["value"]] if bv.is_a?(Hash) }
+        when Hash  then raw.map { |k, v| [k, v] }
+        else []
+        end
+
+      pairs.each_with_object({}) do |(key, value), out|
+        next unless key && value.is_a?(Hash)
+
+        out[key] = value["string_value"] || value.dig("image_value", "url")
+      end
+    end
+
     def extract_link_map(*sources)
       sources.compact.each_with_object({}) do |src, map|
         next unless src.is_a?(Hash)
@@ -251,7 +306,7 @@ module Xtricate
     # and named ones like &rsquo;). Decode them once here so downstream
     # rendering (which re-escapes) doesn't double-encode into &amp;amp;.
     def clean_text(str)
-      Entities.decode(str).gsub(/\s+/, " ").strip
+      Entities.decode(str).gsub(/[[:space:]]+/, " ").strip
     end
 
     def parse_time(val)

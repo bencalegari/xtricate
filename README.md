@@ -12,6 +12,10 @@ subscribers ──► fetch once (twitterapi.io / Bluesky) ──► per-subscri
                               email (Gmail SMTP) ◄── ERB/HTML render (their timezone)
 ```
 
+Article cards prefer the outlet's own `og:` tags. When a paywall blocks the scraper (WSJ 401s every
+user agent), they fall back to the Twitter card metadata that came free with the tweet — real
+headline, description, and preview image — and only then to a title derived from the URL slug.
+
 Every account that posted shows up somewhere: if a follow lands in no theme and shares no picked
 link, their most-engaged post of the week gets its own slot in an **Everyone else** section.
 

@@ -59,7 +59,8 @@ module Xtricate
       think. Your only job is to GROUP tweets and RANK shared links.
 
       You receive JSON with tweets (each has id, author, kind, text, urls) and
-      articles (each has url, sharers, mentions). Return strict JSON in this
+      articles (each has url, sharers, mentions, and — when the link preview was
+      available — title, description, outlet). Return strict JSON in this
       exact shape — nothing else, no prose, no code fences:
 
       {
@@ -102,6 +103,10 @@ module Xtricate
         first, then total engagement.
       - If fewer than 3 long_form candidates exist in the input, include as
         many long_form as actually exist. Do not invent.
+      - Classify from `title`, `description`, and `outlet` when they are
+        present — they are the outlet's own headline and blurb, and they say far
+        more about length and depth than the URL does. Fall back to reading the
+        URL only for articles that carry no title.
       - Classify type using these definitions:
           long_form     = magazine articles, news features, essays, deep
                           analysis, Substack essays, academic papers, books.
@@ -152,11 +157,13 @@ module Xtricate
       clusters = cluster_articles(all_tweets)
       discoveries = discover_accounts(all_tweets, activities)
 
-      payload = build_payload(activities, all_tweets, clusters)
+      cards = card_index(all_tweets)
+
+      payload = build_payload(activities, all_tweets, clusters, cards)
       decision = call_claude(payload)
 
       themes = build_themes(decision["themes"] || [], tweet_index)
-      articles = build_articles(decision["articles"] || [], clusters)
+      articles = build_articles(decision["articles"] || [], clusters, cards)
       solo_picks = build_solo_picks(activities, themes, articles)
 
       Result.new(
@@ -224,7 +231,7 @@ module Xtricate
     # Thread continuations are dropped: only the thread head is sent to Claude,
     # carrying the full concatenated thread text. That way Claude sees one
     # logical post per thread instead of N disjoint tweets.
-    def build_payload(activities, all_tweets, clusters)
+    def build_payload(activities, all_tweets, clusters, cards = {})
       payload_tweets = all_tweets.reject { |t| t.thread_member? && !t.thread_head? }
       top_tweets = payload_tweets.sort_by { |t| -t.engagement }.first(150)
 
@@ -237,16 +244,28 @@ module Xtricate
         accounts_followed: activities.size,
         accounts_active: activities.count { |a| !a.empty? },
         tweets: top_tweets.map { |t| tweet_for_model(t) },
-        articles: article_set.map do |c|
-          {
-            url: c.url,
-            sharers: c.sharers,
-            engagement: c.total_engagement,
-            preferred: preferred_outlet?(c.url),
-            mention_ids: c.mentions.map { |m| m.id.to_s }
-          }
-        end
+        articles: article_set.map { |c| article_for_model(c, cards) }
       }
+    end
+
+    # The link preview Twitter scraped, when we have one: its headline and
+    # description tell the model far more about length and depth than the URL.
+    def article_for_model(cluster, cards)
+      entry = {
+        url: cluster.url,
+        sharers: cluster.sharers,
+        engagement: cluster.total_engagement,
+        preferred: preferred_outlet?(cluster.url),
+        mention_ids: cluster.mentions.map { |m| m.id.to_s }
+      }
+
+      card = card_keys(cluster.url).filter_map { |k| cards[k] }.first
+      return entry if card.nil?
+
+      entry[:title] = card.title if card.title
+      entry[:description] = card.description[0, 300] if card.description
+      entry[:outlet] = card.site if card.site
+      entry
     end
 
     def tweet_for_model(t)
@@ -365,7 +384,28 @@ module Xtricate
 
     # Enforce 10-total / 3-long_form cap server-side. Look up sharers from the
     # original cluster so we never trust the model with rendering data.
-    def build_articles(raw_articles, clusters)
+    def card_index(all_tweets)
+      all_tweets.each_with_object({}) do |t, index|
+        preview = t.card
+        next if preview.nil?
+
+        card_keys(preview.url).each { |k| index[k] ||= preview }
+      end
+    end
+
+    # A card's URL often carries the outlet's own referral params
+    # (?reflink=..., ?mod=...) that the shared link lacks, so index and look up
+    # by host+path as well as by the full normalized URL.
+    def card_keys(url)
+      keys = [normalize_url(url)]
+      uri = URI.parse(url.to_s)
+      keys << "#{uri.host.to_s.downcase}#{uri.path.to_s.sub(%r{/\z}, "")}" if uri.host
+      keys
+    rescue URI::InvalidURIError
+      keys
+    end
+
+    def build_articles(raw_articles, clusters, cards = {})
       cluster_by_url = clusters.to_h { |c| [normalize_url(c.url), c] }
 
       picks = []
@@ -395,16 +435,19 @@ module Xtricate
       picks.zip(og_results).map do |pick, og|
         cluster = cluster_by_url[normalize_url(pick[:url])]
         sharers = cluster ? cluster.sharers : []
+        card = card_keys(pick[:url]).filter_map { |k| cards[k] }.first ||
+               card_keys(og.resolved_url || pick[:url]).filter_map { |k| cards[k] }.first
+        title = og.fallback ? (card&.title || og.title) : (og.title || card&.title)
 
         Article.new(
           # Link to where the shortlink actually landed so the card points at
           # the article, not at reut.rs/trib.al.
           url: og.resolved_url || pick[:url],
           type: pick[:type],
-          title: og.title,
-          image: og.image,
-          description: og.description,
-          site: og.site,
+          title: title,
+          image: og.image || card&.image,
+          description: og.description || card&.description,
+          site: og.site || card&.site,
           sharers: sharers
         )
       end

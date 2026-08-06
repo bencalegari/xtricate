@@ -11,7 +11,8 @@ module Xtricate
     # resolved_url is the URL the redirect chain ended at, which differs from
     # url whenever a tweet shared a shortlink (reut.rs, trib.al, bit.ly, ...).
     # It's what we scrape and what the digest should link to.
-    Result = Struct.new(:url, :resolved_url, :title, :image, :description, :site, keyword_init: true)
+    Result = Struct.new(:url, :resolved_url, :title, :image, :description, :site, :fallback,
+                        keyword_init: true)
 
     # Hosts whose paths are opaque tokens, never readable slugs. If we can't
     # resolve past one of these there's no title to salvage from the URL.
@@ -23,7 +24,7 @@ module Xtricate
 
     # Tracking params that shorteners and social referrers bolt on. Dropped from
     # resolved_url so the digest links to a clean article URL.
-    TRACKING_PARAM = /\A(?:utm_\w+|fbclid|gclid|mc_[ce]id|igshid|ref|ref_src|s|smid|cmpid|CMP)\z/.freeze
+    TRACKING_PARAM = /\A(?:utm_\w+|fbclid|gclid|mc_[ce]id|igshid|ref|reflink|ref_src|s|smid|cmpid|CMP)\z/.freeze
 
     # Words that read wrong title-cased ("Us Contractor", "Ai Spending").
     ACRONYMS = %w[
@@ -191,7 +192,8 @@ module Xtricate
         url: url,
         resolved_url: untrack(best),
         title: url_to_title(best) || url_to_title(url) || hostname(best),
-        site: hostname(best)
+        site: hostname(best),
+        fallback: true
       )
     end
 
@@ -239,7 +241,8 @@ module Xtricate
     def strip_trailing_noise(segment)
       s = segment.sub(/(?:[-_](?:19|20)\d{2}(?:[-_]\d{1,2}){0,2})\z/, "")
       s = s.sub(/(?:[-_][0-9a-f]{8}(?:[-_][0-9a-f]{4}){3}[-_][0-9a-f]{12})\z/i, "") # uuid
-      s.sub(/[-_](?:id[A-Z0-9]{6,}|\h{12,})\z/, "")
+      s = s.sub(/[-_](?:id[A-Z0-9]{6,}|\h{12,})\z/, "")
+      s.sub(/[-_](?=[0-9a-f]*\d)[0-9a-f]{6,}\z/i, "")
     end
 
     # Shortener tokens and hashes: no word separators, mixes digits with letters
@@ -263,7 +266,7 @@ module Xtricate
     def clip(str, n)
       return nil if str.nil?
 
-      s = str.to_s.gsub(/\s+/, " ").strip
+      s = str.to_s.gsub(/[[:space:]]+/, " ").strip
       s.empty? ? nil : s[0, n]
     end
   end

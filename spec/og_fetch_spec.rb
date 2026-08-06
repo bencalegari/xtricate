@@ -25,6 +25,16 @@ RSpec.describe Xtricate::OgFetch do
       expect(title_for(url)).to eq("Letter To The Editor Creepiest Sales Demo")
     end
 
+    it "strips the hash a paywall bolts onto its slug" do
+      url = "https://www.wsj.com/finance/leopold-aschenbrenner-situational-awareness-ai-fund-597633d3"
+      expect(title_for(url)).to eq("Leopold Aschenbrenner Situational Awareness AI Fund")
+    end
+
+    it "keeps a short trailing number that is part of the story" do
+      expect(title_for("https://example.com/news/boeing-737-max-grounded"))
+        .to eq("Boeing 737 Max Grounded")
+    end
+
     it "returns nil for a shortener token rather than inventing a title" do
       expect(title_for("https://reut.rs/4pk1Got")).to be_nil
       expect(title_for("https://trib.al/vDu5OtN")).to be_nil
