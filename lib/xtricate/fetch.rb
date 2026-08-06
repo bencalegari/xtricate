@@ -17,6 +17,7 @@ module Xtricate
   class Fetch
     BASE_URL = "https://api.twitterapi.io".freeze
     ENDPOINT = "/twitter/user/last_tweets".freeze
+    RT_PREFIX = /\ART @([A-Za-z0-9_]{1,15}):\s*/.freeze
 
     def initialize(api_key:, since:, max_per_account: 100, conn: nil, logger: nil)
       @api_key = api_key
@@ -136,11 +137,24 @@ module Xtricate
       # commonly a retweet of someone quoting a news link). Capture its nested
       # quote so the innermost source isn't lost.
       inner = quoted_src && (quoted_src["quoted_tweet"] || quoted_src["quote"])
+
+      text = clean_text(t["text"] || t["full_text"] || "")
+      quoted_author = presence(quoted_src && dig_author(quoted_src))
+      quoted_text = presence(quoted_src && clean_text(quoted_src["text"] || quoted_src["full_text"] || ""))
+
+      if kind == :retweet && (m = text.match(RT_PREFIX))
+        quoted_author ||= m[1]
+        quoted_text ||= presence(text.sub(RT_PREFIX, ""))
+      end
+
+      media = media.uniq { |mi| mi.thumb || mi.url }
+      return nil if quoted_text.nil? && text.empty? && media.empty? && urls.empty?
+
       Tweet.new(
-        id: t["id"] || t["tweet_id"] || t["id_str"],
+        id: presence(t["id"] || t["tweet_id"] || t["id_str"]),
         author: author,
         kind: kind,
-        text: clean_text(t["text"] || t["full_text"] || ""),
+        text: text,
         created_at: parse_time(t["createdAt"] || t["created_at"]),
         url: t["url"] || t["tweet_url"],
         urls: urls.uniq,
@@ -148,13 +162,13 @@ module Xtricate
         retweet_count: int(t["retweetCount"] || t["retweet_count"]),
         reply_count: int(t["replyCount"] || t["reply_count"]),
         quote_count: int(t["quoteCount"] || t["quote_count"]),
-        quoted_id: quoted_src && (quoted_src["id"] || quoted_src["tweet_id"] || quoted_src["id_str"]),
-        quoted_author: quoted_src && dig_author(quoted_src),
-        quoted_text: quoted_src && clean_text(quoted_src["text"] || quoted_src["full_text"] || ""),
-        quoted_inner_author: inner && dig_author(inner),
-        quoted_inner_text: inner && clean_text(inner["text"] || inner["full_text"] || ""),
+        quoted_id: presence(quoted_src && (quoted_src["id"] || quoted_src["tweet_id"] || quoted_src["id_str"])),
+        quoted_author: quoted_author,
+        quoted_text: quoted_text,
+        quoted_inner_author: presence(inner && dig_author(inner)),
+        quoted_inner_text: presence(inner && clean_text(inner["text"] || inner["full_text"] || "")),
         source: :twitter,
-        media: media.uniq { |m| m.thumb || m.url },
+        media: media,
         link_map: extract_link_map(t, retweeted, quoted, inner),
         conversation_id: conv_id&.to_s,
         thread_root_id: in_reply_to && conv_id ? nil : nil # filled in by ThreadAssembly later
@@ -254,6 +268,11 @@ module Xtricate
     end
 
     def int(val) = val.nil? ? 0 : val.to_i
+
+    def presence(val)
+      s = val.to_s
+      s.empty? ? nil : s
+    end
 
     def log(msg)
       @logger&.puts(msg)

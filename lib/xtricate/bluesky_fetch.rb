@@ -95,11 +95,21 @@ module Xtricate
 
       is_repost = reason && reason["$type"].to_s.include?("reasonRepost")
 
-      if is_repost
-        normalize_repost(post, reason, follower: follower)
-      else
-        normalize_native(post, follower: follower)
-      end
+      tweet =
+        if is_repost
+          normalize_repost(post, reason, follower: follower)
+        else
+          normalize_native(post, follower: follower)
+        end
+      renderable?(tweet) ? tweet : nil
+    end
+
+    def renderable?(tweet)
+      return false if tweet.nil?
+
+      !tweet.amplified_text.to_s.empty? ||
+        !Array(tweet.media).empty? ||
+        !Array(tweet.urls).empty?
     end
 
     # The follower reposted someone else's post (no commentary). Mirror

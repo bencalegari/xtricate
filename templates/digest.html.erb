@@ -45,107 +45,7 @@
                 <h3 style="font-size:17px; margin:18px 0 8px;"><%= h(theme.name) %></h3>
               </td>
             </tr>
-            <% prev_day = nil %>
-            <% theme_units(theme).each do |unit| %>
-              <% day = format_day(unit[:at]) %>
-              <% if day && day != prev_day %>
-                <tr>
-                  <td style="padding:10px 32px 0 32px;">
-                    <div style="border-top:1px dashed #d1d5db; padding-top:6px; margin-top:4px; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#9ca3af; font-weight:600;">
-                      <%= day %>
-                    </div>
-                  </td>
-                </tr>
-                <% prev_day = day %>
-              <% end %>
-              <% if unit[:type] == :retweet_group %>
-                <% rt = unit[:anchor] %>
-                <tr>
-                  <td style="padding:0 32px 12px 32px;">
-                    <div style="border-left:3px solid #e5e7eb; padding:8px 0 8px 14px; margin:6px 0;">
-                      <div style="font-size:14px; color:#374151;">
-                        <span style="color:#6b7280;">Retweeted by</span>
-                        <% unit[:retweeters].first(6).each_with_index do |h_, i| %><%= author_link(h_) %><%= i < [unit[:retweeters].size, 6].min - 1 ? "," : "" %> <% end %>
-                        <% if unit[:retweeters].size > 6 %>
-                          <span style="color:#9ca3af;"> + <%= unit[:retweeters].size - 6 %> more</span>
-                        <% end %>
-                        <span style="color:#6b7280;">&middot; from</span> <%= author_link(rt.quoted_author) %>
-                      </div>
-                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.quoted_text || rt.text, rt) %></div>
-                      <%= render_media(rt.media) %>
-                      <% if rt.quoted_inner_text && !rt.quoted_inner_text.empty? %>
-                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
-                          <% if rt.quoted_inner_author %>
-                            <div style="font-size:13px; color:#6b7280;"><span>quoting</span> <%= author_link(rt.quoted_inner_author) %></div>
-                          <% end %>
-                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap; margin-top:2px;"><%= render_tweet_text(rt.quoted_inner_text, rt) %></div>
-                        </div>
-                      <% end %>
-                      <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
-                        <% if (ts = format_time(unit[:at])) %><span><%= ts %></span><% end %>
-                        <% if (link = rt.quoted_permalink || rt.permalink) %>
-                          <% if ts %> &middot; <% end %>
-                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;"><%= view_label(rt) %> &rarr;</a>
-                        <% end %>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              <% else %>
-                <% t = unit[:tweet] %>
-                <tr>
-                  <td style="padding:0 32px 12px 32px;">
-                    <div style="border-left:3px solid <%= t.thread_head? ? '#7c3aed' : '#e5e7eb' %>; padding:8px 0 8px 14px; margin:6px 0;">
-                      <div style="font-size:14px; color:#374151;">
-                        <%= author_link(t.author) %>
-                        <% if t.kind == :quote && t.quoted_author %>
-                          <span style="color:#6b7280;">quoting</span> <%= author_link(t.quoted_author) %>
-                        <% end %>
-                        <% rts = unit[:retweeters] %>
-                        <% if rts && !rts.empty? %>
-                          <span style="color:#6b7280;">&middot; retweeted by</span>
-                          <% rts.first(6).each_with_index do |h_, i| %><%= author_link(h_) %><%= i < [rts.size, 6].min - 1 ? "," : "" %> <% end %>
-                          <% if rts.size > 6 %>
-                            <span style="color:#9ca3af;"> + <%= rts.size - 6 %> more</span>
-                          <% end %>
-                        <% end %>
-                        <% if t.thread_head? && t.thread_continuations && !t.thread_continuations.empty? %>
-                          <span style="display:inline-block; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#7c3aed; background:#f3eaff; padding:1px 6px; border-radius:8px; margin-left:6px; vertical-align:1px; font-weight:700;">Thread &middot; <%= 1 + t.thread_continuations.size %></span>
-                        <% end %>
-                      </div>
-                      <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text, t) %></div>
-                      <%= render_media(t.media) %>
-
-                      <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
-                        <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
-                          <div style="color:#4b5563; font-size:14px; line-height:1.5; white-space:pre-wrap;"><%= render_tweet_text(t.quoted_text, t) %></div>
-                          <% if t.quoted_inner_text && !t.quoted_inner_text.empty? %>
-                            <div style="border-left:2px solid #e5e7eb; padding:4px 0 4px 10px; margin:6px 0 0; color:#6b7280; font-size:13px; line-height:1.45; white-space:pre-wrap;"><% if t.quoted_inner_author %>quoting <%= author_link(t.quoted_inner_author) %><br><% end %><%= render_tweet_text(t.quoted_inner_text, t) %></div>
-                          <% end %>
-                        </div>
-                      <% end %>
-
-                      <% if t.thread_head? && t.thread_continuations %>
-                        <% t.thread_continuations.each do |cont| %>
-                          <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #e5e7eb;">
-                            <div style="font-size:15px; line-height:1.55; color:#111827; white-space:pre-wrap;"><%= render_tweet_text(cont.text, cont) %></div>
-                            <%= render_media(cont.media) %>
-                          </div>
-                        <% end %>
-                      <% end %>
-
-                      <div style="margin-top:6px; font-size:12px; color:#9ca3af;">
-                        <% if (ts = format_time(t.created_at)) %><span><%= ts %></span><% end %>
-                        <% if (link = t.permalink) %>
-                          <% if ts %> &middot; <% end %>
-                          <a href="<%= h(link) %>" style="color:#6b7280; text-decoration:none;"><%= view_label(t) %> &rarr;</a>
-                        <% end %>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              <% end %>
-            <% end %>
+            <%= render_units(theme.tweets) %>
           <% end %>
           <% end %>
 
@@ -210,6 +110,23 @@
               </tr>
             <% end %>
           <% end %>
+          <% end %>
+
+          <% if @result.solo_picks && !@result.solo_picks.empty? %>
+            <tr>
+              <td style="padding:8px 32px 4px 32px;">
+                <h2 style="font-size:13px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7280; margin:32px 0 4px; padding-bottom:8px; border-bottom:1px solid #eceef1;">Everyone else</h2>
+                <div style="font-size:12px; color:#9ca3af; margin-bottom:2px;">Didn't fit a theme — their most-engaged post this week.</div>
+              </td>
+            </tr>
+            <% @result.solo_picks.each do |pick| %>
+              <tr>
+                <td style="padding:0 32px 4px 32px;">
+                  <h3 style="font-size:15px; margin:16px 0 4px;"><%= handle_link(pick.handle, pick.source) %></h3>
+                </td>
+              </tr>
+              <%= render_units([pick.tweet], show_days: false) %>
+            <% end %>
           <% end %>
 
           <!-- Account discovery footer -->

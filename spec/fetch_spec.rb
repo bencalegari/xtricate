@@ -80,6 +80,49 @@ RSpec.describe Xtricate::Fetch do
     end
   end
 
+  describe "#normalize on a stubbed retweet" do
+    def stub_retweet(outer_text, stub = { "id" => "", "text" => "" })
+      normalize({ "id" => "200", "author" => { "userName" => "willmenaker" },
+                  "text" => outer_text, "retweeted_tweet" => stub })
+    end
+
+    it "recovers the amplified author and text from the RT prefix" do
+      t = stub_retweet("RT @MacaesBruno: Analysts at Israel-funded think tanks argue otherwise")
+
+      expect(t.quoted_author).to eq("MacaesBruno")
+      expect(t.quoted_text).to eq("Analysts at Israel-funded think tanks argue otherwise")
+    end
+
+    it "leaves an empty amplified id nil rather than linking to a bare viewer URL" do
+      t = stub_retweet("RT @MacaesBruno: something")
+
+      expect(t.quoted_id).to be_nil
+      expect(t.quoted_permalink).to be_nil
+      expect(t.permalink).to eq("https://twitterwebviewer.com/?tweet=200")
+    end
+
+    it "drops a post with nothing to show at all" do
+      expect(stub_retweet("")).to be_nil
+    end
+
+    it "keeps a post that has no text but does have media" do
+      raw = { "id" => "300", "author" => { "userName" => "alice" }, "text" => "",
+              "extendedEntities" => { "media" => [{ "type" => "photo",
+                                                    "media_url_https" => "https://pbs.twimg.com/media/a.jpg" }] } }
+
+      expect(normalize(raw).media.size).to eq(1)
+    end
+
+    it "prefers the amplified post's own text when the API supplies it" do
+      t = stub_retweet("RT @seth: truncated ver…",
+                       { "id" => "100", "author" => { "userName" => "seth" },
+                         "text" => "the whole thing, untruncated" })
+
+      expect(t.quoted_text).to eq("the whole thing, untruncated")
+      expect(t.quoted_id).to eq("100")
+    end
+  end
+
   describe "#normalize link_map" do
     it "maps t.co shortlinks to their expansions from url and media entities" do
       raw = {

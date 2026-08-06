@@ -8,6 +8,7 @@ module Xtricate
   # and a classification badge (long-form / short-form / news bulletin / other).
   class Renderer
     TEMPLATE = File.expand_path("../../templates/digest.html.erb", __dir__)
+    UNITS_TEMPLATE = File.expand_path("../../templates/_units.html.erb", __dir__)
 
     TYPE_LABELS = {
       "long_form"     => "Long-form",
@@ -23,14 +24,19 @@ module Xtricate
       "other"         => "#525252"  # gray — fallback
     }.freeze
 
-    def initialize(template_path: TEMPLATE, timezone: nil)
+    def initialize(template_path: TEMPLATE, units_template_path: UNITS_TEMPLATE, timezone: nil)
       @template = ERB.new(File.read(template_path, encoding: "UTF-8"), trim_mode: "-")
+      @units_template = ERB.new(File.read(units_template_path, encoding: "UTF-8"), trim_mode: "-")
       @timezone = timezone
     end
 
     def render(result)
       @result = result
       @template.result(binding)
+    end
+
+    def render_units(tweets, show_days: true)
+      @units_template.result(binding)
     end
 
     def subject(result)
@@ -65,9 +71,14 @@ module Xtricate
     end
 
     def author_link(handle)
+      handle_link(handle, :twitter)
+    end
+
+    def handle_link(handle, source)
       return "" if handle.nil? || handle.empty?
 
-      %(<a href="https://x.com/#{h(handle)}" style="color:#1d4ed8; text-decoration:none; font-weight:600;">@#{h(handle)}</a>)
+      base = source == :bluesky ? "https://bsky.app/profile/" : "https://x.com/"
+      %(<a href="#{base}#{h(handle)}" style="color:#1d4ed8; text-decoration:none; font-weight:600;">@#{h(handle)}</a>)
     end
 
     def type_label(type) = TYPE_LABELS.fetch(type, "Other")
@@ -151,12 +162,16 @@ module Xtricate
     # For :single, `at` is the original's timestamp; for :retweet_group it's the
     # earliest retweet we saw of that original.
     def theme_units(theme)
+      units_for(theme.tweets)
+    end
+
+    def units_for(tweets)
       units = []
       index_by_key = {}
 
-      theme.tweets.each do |t|
-        if t.kind == :retweet && t.quoted_id
-          key = t.quoted_id.to_s
+      Array(tweets).each do |t|
+        if t.kind == :retweet
+          key = (t.quoted_id || t.id).to_s
           if (i = index_by_key[key])
             unit = units[i]
             unit[:retweeters] << t.author unless unit[:retweeters].include?(t.author)

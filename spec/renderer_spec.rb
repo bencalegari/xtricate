@@ -1,4 +1,5 @@
 require "time"
+require "xtricate/digest"
 
 RSpec.describe Xtricate::Renderer do
   subject(:renderer) { described_class.new }
@@ -79,6 +80,16 @@ RSpec.describe Xtricate::Renderer do
       expect(unit[:retweeters]).to eq(["will"])
     end
 
+    it "still renders a retweet whose amplified post has no id as a retweet group" do
+      rt = tweet(id: "200", author: "will", kind: :retweet, text: "RT @seth: the take",
+                 quoted_author: "seth", quoted_text: "the take")
+
+      units = renderer.theme_units(theme(rt))
+
+      expect(units.first[:type]).to eq(:retweet_group)
+      expect(units.first[:anchor].amplified_text).to eq("the take")
+    end
+
     it "keeps quote tweets as separate single units (commentary is unique)" do
       q1 = tweet(id: "1", author: "a", kind: :quote, quoted_id: "100",
                  quoted_author: "seth", text: "thoughts one")
@@ -107,6 +118,59 @@ RSpec.describe Xtricate::Renderer do
       units = renderer.theme_units(theme(orig, rt))
 
       expect(units.first[:at]).to eq(Time.parse("2026-06-08 10:05"))
+    end
+  end
+
+  describe "#render_units" do
+    let(:at) { Time.parse("2026-06-08 17:30 UTC") }
+
+    it "prints a day divider above the posts of a theme" do
+      html = renderer.render_units([original(id: "1", author: "alice", at: at)])
+
+      expect(html).to include("Mon, Jun 8")
+    end
+
+    it "omits the day divider when the caller renders a lone post" do
+      html = renderer.render_units([original(id: "1", author: "alice", at: at)], show_days: false)
+
+      expect(html).not_to include("Mon, Jun 8")
+      expect(html).to include("the take")
+    end
+  end
+
+  describe "solo picks section" do
+    def result(solo_picks)
+      OpenStruct.new(
+        period_label: "Jun 1 – Jun 8, 2026", account_count: 2, active_count: 2,
+        tweet_count: 2, article_count: 0, themes: [], articles: [],
+        discoveries: [], solo_picks: solo_picks
+      )
+    end
+
+    def pick(handle:, tweet:, source: :twitter)
+      Xtricate::Digest::SoloPick.new(handle: handle, source: source, tweet: tweet)
+    end
+
+    it "renders a heading and card for each account the themes passed over" do
+      html = renderer.render(result([
+        pick(handle: "dril", tweet: original(id: "1", author: "dril", text: "hello mr president"))
+      ]))
+
+      expect(html).to include("Everyone else")
+      expect(html).to include(%(https://x.com/dril" style="color:#1d4ed8; text-decoration:none; font-weight:600;">@dril))
+      expect(html).to include("hello mr president")
+    end
+
+    it "links a bluesky pick's heading to bsky.app" do
+      tweet = Xtricate::Tweet.new(id: "1", author: "dril.bsky.social", kind: :original,
+                                  text: "hi", source: :bluesky)
+      html = renderer.render(result([pick(handle: "dril.bsky.social", tweet: tweet, source: :bluesky)]))
+
+      expect(html).to include("https://bsky.app/profile/dril.bsky.social")
+    end
+
+    it "leaves the section out entirely when every account was already shown" do
+      expect(renderer.render(result([]))).not_to include("Everyone else")
     end
   end
 

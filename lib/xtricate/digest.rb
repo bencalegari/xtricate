@@ -1,4 +1,5 @@
 require "json"
+require "set"
 require "uri"
 require "anthropic"
 
@@ -32,8 +33,16 @@ module Xtricate
         end
       end
     end
+    SoloPick = Struct.new(:handle, :source, :tweet, keyword_init: true) do
+      def profile_url
+        case source
+        when :bluesky then "https://bsky.app/profile/#{handle}"
+        else "https://x.com/#{handle}"
+        end
+      end
+    end
     Result = Struct.new(
-      :themes, :articles, :discoveries,
+      :themes, :articles, :discoveries, :solo_picks,
       :period_label, :account_count, :active_count,
       :tweet_count, :article_count,
       keyword_init: true
@@ -148,11 +157,13 @@ module Xtricate
 
       themes = build_themes(decision["themes"] || [], tweet_index)
       articles = build_articles(decision["articles"] || [], clusters)
+      solo_picks = build_solo_picks(activities, themes, articles)
 
       Result.new(
         themes: themes,
         articles: articles,
         discoveries: discoveries,
+        solo_picks: solo_picks,
         period_label: period_label,
         account_count: activities.size,
         active_count: activities.count { |a| !a.empty? },
@@ -172,7 +183,35 @@ module Xtricate
         .sort_by { |c| -c.total_engagement }
     end
 
+    def build_solo_picks(activities, themes, articles)
+      covered = covered_handles(themes, articles)
+
+      activities.reject(&:empty?).filter_map do |activity|
+        next if covered.include?(normalize_handle(activity.handle))
+
+        best = best_post(activity.tweets)
+        next if best.nil?
+
+        SoloPick.new(handle: activity.handle, source: activity.source, tweet: best)
+      end.sort_by { |p| -p.tweet.engagement }
+    end
+
     private
+
+    def covered_handles(themes, articles)
+      handles = themes.flat_map { |t| t.tweets.map(&:author) } +
+                articles.flat_map(&:sharers)
+      handles.map { |h| normalize_handle(h) }.to_set
+    end
+
+    def best_post(tweets)
+      candidates = Array(tweets).reject { |t| t.thread_member? && !t.thread_head? }
+      own = candidates.reject(&:retweet?)
+      pool = own.empty? ? candidates : own
+      pool.max_by { |t| [t.engagement, t.created_at.to_i] }
+    end
+
+    def normalize_handle(handle) = handle.to_s.downcase.delete_prefix("@")
 
     def index_tweets(all_tweets)
       all_tweets.to_h { |t| [t.id.to_s, t] }

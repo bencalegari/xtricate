@@ -54,18 +54,22 @@ module Xtricate
       (like_count.to_i) + (retweet_count.to_i * 2) + (quote_count.to_i * 2)
     end
 
+    def amplified_text
+      quoted_text.to_s.empty? ? text : quoted_text
+    end
+
     # Permalink to this post.
     def permalink
       case source
       when :bluesky
-        url || (id && author ? "https://bsky.app/profile/#{author}/post/#{id}" : nil)
+        url || (!id.to_s.empty? && author ? "https://bsky.app/profile/#{author}/post/#{id}" : nil)
       else
-        id ? "#{TWITTER_VIEWER}#{id}" : url
+        id.to_s.empty? ? url : "#{TWITTER_VIEWER}#{id}"
       end
     end
 
     def quoted_permalink
-      return nil unless quoted_id
+      return nil if quoted_id.to_s.empty?
 
       case source
       when :bluesky

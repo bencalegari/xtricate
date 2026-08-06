@@ -12,6 +12,9 @@ subscribers ──► fetch once (twitterapi.io / Bluesky) ──► per-subscri
                               email (Gmail SMTP) ◄── ERB/HTML render (their timezone)
 ```
 
+Every account that posted shows up somewhere: if a follow lands in no theme and shares no picked
+link, their most-engaged post of the week gets its own slot in an **Everyone else** section.
+
 One run serves several subscribers. Handles are fetched **once** across everybody — a follow shared
 by three people is billed once — then each subscriber gets their own slice, their own Claude pass,
 and their own email. Stateless: each run looks back `lookback_days` using post timestamps, so
