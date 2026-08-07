@@ -157,7 +157,7 @@ RSpec.describe Xtricate::Renderer do
       ]))
 
       expect(html).to include("Everyone else")
-      expect(html).to include(%(https://x.com/dril" style="color:#1d4ed8; text-decoration:none; font-weight:600;">@dril))
+      expect(html).to match(%r{<a href="https://x\.com/dril"[^>]*>@dril</a>})
       expect(html).to include("hello mr president")
     end
 
@@ -283,6 +283,106 @@ RSpec.describe Xtricate::Renderer do
     it "returns nil for a missing timestamp" do
       expect(in_zone("UTC").format_time(nil)).to be_nil
       expect(in_zone("UTC").format_day(nil)).to be_nil
+    end
+  end
+end
+
+RSpec.describe "Xtricate::Renderer splitting" do
+  subject(:renderer) { Xtricate::Renderer.new }
+
+  def tweet(id:, text: "the take")
+    Xtricate::Tweet.new(id: id, author: "a#{id}", kind: :original, text: text, source: :x)
+  end
+
+  def result(themes: [], solo_picks: [], articles: [], discoveries: [])
+    OpenStruct.new(themes: themes, articles: articles, discoveries: discoveries,
+                   solo_picks: solo_picks, period_label: "Jun 1 – Jun 8, 2026",
+                   account_count: 9, active_count: 9, tweet_count: 9, article_count: 0)
+  end
+
+  def theme(name, count)
+    OpenStruct.new(name: name, tweets: Array.new(count) { |i| tweet(id: "#{name}-#{i}") })
+  end
+
+  def pick(handle)
+    Xtricate::Digest::SoloPick.new(handle: handle, source: :twitter, tweet: tweet(id: handle))
+  end
+
+  describe "#minify" do
+    it "leaves the visible text byte-identical" do
+      html = renderer.render(result(solo_picks: [pick("dril")]))
+      visible = html.gsub(/<[^>]+>/, " ").gsub(/\s+/, " ").strip
+
+      expect(visible).to include("dril", "the take", "Everyone else")
+    end
+
+    it "strips the template indentation the reader never sees" do
+      html = renderer.render(result(solo_picks: [pick("dril")]))
+
+      expect(html).not_to match(/\n[ \t]{4,}</)
+    end
+  end
+
+  describe "#parts" do
+    it "sends one email when everything fits" do
+      parts = renderer.parts(result(themes: [theme("AI", 2)]))
+
+      expect(parts.size).to eq(1)
+    end
+
+    it "splits once the budget is exceeded" do
+      big = result(themes: Array.new(6) { |i| theme("T#{i}", 8) })
+
+      parts = renderer.parts(big, budget: 30_000)
+
+      expect(parts.size).to be > 1
+    end
+
+    it "keeps every part under the budget" do
+      big = result(themes: Array.new(6) { |i| theme("T#{i}", 8) })
+
+      parts = renderer.parts(big, budget: 30_000)
+
+      expect(parts.map { |p| renderer.encoded_size(p) }).to all(be <= 30_000)
+    end
+
+    it "keeps every part under Gmail's clip threshold at the shipped budget" do
+      big = result(themes: Array.new(8) { |i| theme("T#{i}", 8) },
+                   solo_picks: Array.new(25) { |i| pick("acct#{i}") })
+
+      sizes = renderer.parts(big).map { |p| renderer.encoded_size(p) }
+
+      expect(sizes).to all(be < Xtricate::Renderer::GMAIL_CLIP_BYTES)
+    end
+
+    it "loses no content across the split" do
+      big = result(themes: Array.new(6) { |i| theme("T#{i}", 8) },
+                   solo_picks: Array.new(10) { |i| pick("acct#{i}") })
+
+      joined = renderer.parts(big, budget: 30_000).join
+      whole = renderer.render(big)
+
+      expect(whole.scan(/id=\d+|acct\d+/).uniq).to all(satisfy { |m| joined.include?(m) })
+    end
+
+    it "repeats the header on every part so each stands alone" do
+      big = result(themes: Array.new(6) { |i| theme("T#{i}", 8) })
+
+      parts = renderer.parts(big, budget: 30_000)
+
+      expect(parts).to all(include("The week on Twitter"))
+    end
+
+    it "still produces one part for an empty week" do
+      expect(renderer.parts(result).size).to eq(1)
+    end
+
+    it "never emits an empty part" do
+      big = result(themes: Array.new(4) { |i| theme("T#{i}", 8) })
+
+      parts = renderer.parts(big, budget: 25_000)
+
+      expect(parts).to all(satisfy { |p| p.include?("<h3") || p.include?("Everyone else") })
     end
   end
 end

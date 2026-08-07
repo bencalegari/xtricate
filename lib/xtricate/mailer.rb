@@ -1,4 +1,5 @@
 require "mail"
+require "securerandom"
 
 module Xtricate
   # Sends the digest as an HTML email from a Gmail account over SMTP using an
@@ -11,7 +12,31 @@ module Xtricate
       @sender_name = sender_name
     end
 
-    def deliver(to:, subject:, html:)
+    def deliver_parts(to:, subject:, parts:)
+      thread_root = nil
+      sent = 0
+      failures = []
+
+      parts.each_with_index do |html, index|
+        numbered = parts.size > 1 ? "#{subject} (#{index + 1}/#{parts.size})" : subject
+        id = "<xtricate-#{SecureRandom.hex(8)}-#{index + 1}@#{mail_domain}>"
+        begin
+          deliver(to: to, subject: numbered, html: html, message_id: id, in_reply_to: thread_root)
+          thread_root ||= id
+          sent += 1
+        rescue StandardError => e
+          failures << "part #{index + 1}/#{parts.size}: #{e.class}: #{e.message}"
+        end
+      end
+
+      [sent, failures]
+    end
+
+    def mail_domain
+      @gmail_address.to_s.split("@").last || "xtricate.local"
+    end
+
+    def deliver(to:, subject:, html:, message_id: nil, in_reply_to: nil)
       from_address = @gmail_address
       from_name = @sender_name
       pw = @gmail_app_password
@@ -26,6 +51,12 @@ module Xtricate
           content_type "text/html; charset=UTF-8"
           body html
         end
+      end
+
+      mail.message_id = message_id if message_id
+      if in_reply_to
+        mail.in_reply_to = in_reply_to
+        mail.references = in_reply_to
       end
 
       mail.delivery_method(:smtp,

@@ -194,11 +194,12 @@ subscribers.each do |sub|
   result = digest.build(slice)
 
   renderer = Xtricate::Renderer.new(timezone: sub.timezone)
-  html = renderer.render(result)
+  parts = renderer.parts(result)
   subject = renderer.subject(result)
+  sizes = parts.map { |p| renderer.encoded_size(p) }
 
   if options[:mode] == :dry_run
-    path =
+    base =
       if options[:out_dir]
         File.join(options[:out_dir], "digest-#{sub.id}.html")
       elsif subscribers.size == 1
@@ -206,13 +207,22 @@ subscribers.each do |sub|
       else
         File.join(ROOT, "digest-#{sub.id}.html")
       end
-    File.write(path, html)
-    log.puts "[#{sub.id}] wrote #{path} (#{posts} post(s), #{result.themes.size} theme(s), #{result.solo_picks.size} solo pick(s), #{html.bytesize} bytes). Subject: #{subject.inspect}"
+    written = parts.each_with_index.map do |html, i|
+      path = parts.size == 1 ? base : base.sub(/(\.html)?\z/, "-#{i + 1}\\1")
+      File.write(path, html)
+      path
+    end
+    log.puts "[#{sub.id}] wrote #{written.join(', ')} (#{posts} post(s), #{result.themes.size} theme(s), #{result.solo_picks.size} solo pick(s), #{parts.size} part(s), #{sizes.join('+')} encoded bytes). Subject: #{subject.inspect}"
     next
   end
 
-  mailer.deliver(to: sub.email, subject: subject, html: html)
-  log.puts "[#{sub.id}] sent — #{posts} post(s), #{result.themes.size} theme(s)#{verbose ? " → #{sub.email}" : ''}."
+  sent_parts, part_failures = mailer.deliver_parts(to: sub.email, subject: subject, parts: parts)
+  if part_failures.any?
+    failures << [sub.id, "delivered #{sent_parts}/#{parts.size} part(s); #{part_failures.join('; ')}"]
+    log.puts "[#{sub.id}] PARTIAL — delivered #{sent_parts} of #{parts.size} part(s): #{part_failures.join('; ')}"
+  else
+    log.puts "[#{sub.id}] sent — #{posts} post(s), #{result.themes.size} theme(s), #{parts.size} part(s)#{verbose ? " → #{sub.email}" : ''}."
+  end
 rescue StandardError => e
   failures << [sub.id, "#{e.class}: #{e.message}"]
   log.puts "[#{sub.id}] FAILED — #{e.class}: #{e.message}"

@@ -30,9 +30,38 @@ module Xtricate
       @timezone = timezone
     end
 
+    GMAIL_CLIP_BYTES = 102_400
+    PART_BUDGET = 90_000
+    SECTIONS = %i[themes articles solo_picks discoveries].freeze
+
     def render(result)
       @result = result
-      @template.result(binding)
+      minify(@template.result(binding))
+    end
+
+    def parts(result, budget: PART_BUDGET)
+      shell = encoded_size(render(slice(result, [])))
+      groups = [[]]
+      running = shell
+
+      units_of(result).each do |unit|
+        size = encoded_size(render(slice(result, [unit]))) - shell
+        if groups.last.any? && running + size > budget
+          groups << []
+          running = shell
+        end
+        groups.last << unit
+        running += size
+      end
+
+      filled = groups.reject(&:empty?)
+      return [render(slice(result, []))] if filled.empty?
+
+      filled.map { |group| render(slice(result, group)) }
+    end
+
+    def encoded_size(html)
+      [html].pack("M").bytesize
     end
 
     def render_units(tweets, show_days: true)
@@ -41,6 +70,24 @@ module Xtricate
 
     def subject(result)
       "Your Twitter digest — #{result.period_label}"
+    end
+
+    def minify(html)
+      html
+        .gsub(/^[ \t]+(?=<)/, "")
+        .gsub(/>\n\s*</, "><")
+        .gsub(/style="([^"]*)"/) { %(style="#{$1.gsub(/\s*;\s*/, ";").gsub(/:\s+/, ":").strip}") }
+    end
+
+    def units_of(result)
+      SECTIONS.flat_map { |section| Array(result.public_send(section)).map { |item| [section, item] } }
+    end
+
+    def slice(result, units)
+      chosen = units.group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
+      result.dup.tap do |copy|
+        SECTIONS.each { |section| copy.public_send(:"#{section}=", chosen[section] || []) }
+      end
     end
 
     # --- Template helpers below (invoked via ERB binding). ---

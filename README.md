@@ -19,6 +19,13 @@ headline, description, and preview image — and only then to a title derived fr
 Every account that posted shows up somewhere: if a follow lands in no theme and shares no picked
 link, their most-engaged post of the week gets its own slot in an **Everyone else** section.
 
+Gmail clips a message past ~102 KB, and it counts the *encoded* size — quoted-printable adds
+roughly 9% in soft line breaks. Rather than drop content to fit, the renderer minifies (the
+template's own indentation is ~20% of the raw bytes) and then splits a long week across several
+emails, breaking on theme, article, and pick boundaries. Parts after the first reference the
+first part's `Message-ID`, so Gmail groups them into one conversation instead of several inbox
+entries.
+
 One run serves several subscribers. Handles are fetched **once** across everybody — a follow shared
 by three people is billed once — then each subscriber gets their own slice, their own Claude pass,
 and their own email. Stateless: each run looks back `lookback_days` using post timestamps, so
