@@ -10,6 +10,17 @@ model: claude-sonnet-4-6
 # once tweets fall outside the lookback window).
 max_tweets_per_account: 100
 
+include_replies: false
+
+fetch_qps: 4
+
+max_solo_picks: 25
+
+max_payload_tweets: 150
+payload_tweets_per_account: 3
+
+max_discoveries: 5
+
 # Display name on the "From" line.
 sender_name: Xtricate Digest
 

@@ -1,5 +1,9 @@
 RSpec.describe Xtricate::SubscriberBuilder do
-  let(:defaults) { OpenStruct.new(timezone: "America/Denver", lookback_days: 5) }
+  let(:defaults) do
+    OpenStruct.new(timezone: "America/Denver", lookback_days: 5, include_replies: false,
+                   max_solo_picks: 25, max_payload_tweets: 150,
+                   payload_tweets_per_account: 3, max_discoveries: 5)
+  end
 
   def build(yml, email: "reader@example.com")
     described_class.build(yml, id: "subscriber-1", email: email, defaults: defaults)
@@ -35,6 +39,46 @@ RSpec.describe Xtricate::SubscriberBuilder do
 
     expect(sub.timezone).to eq("America/New_York")
     expect(sub.lookback_days).to eq(3)
+  end
+
+  it "inherits the fetch and cap knobs when the config omits them" do
+    sub = build({ "accounts" => %w[paulg] })
+
+    expect(sub.include_replies).to be(false)
+    expect(sub.max_solo_picks).to eq(25)
+    expect(sub.max_payload_tweets).to eq(150)
+    expect(sub.payload_tweets_per_account).to eq(3)
+    expect(sub.max_discoveries).to eq(5)
+  end
+
+  it "prefers the subscriber's own caps over the defaults" do
+    sub = build({ "accounts" => %w[paulg], "max_solo_picks" => 5, "max_payload_tweets" => 40,
+                  "payload_tweets_per_account" => 1, "max_discoveries" => 2 })
+
+    expect(sub.max_solo_picks).to eq(5)
+    expect(sub.max_payload_tweets).to eq(40)
+    expect(sub.payload_tweets_per_account).to eq(1)
+    expect(sub.max_discoveries).to eq(2)
+  end
+
+  it "lets a subscriber opt in to replies the default leaves off" do
+    sub = build({ "accounts" => %w[paulg], "include_replies" => true })
+
+    expect(sub.include_replies).to be(true)
+  end
+
+  it "honours an explicit include_replies: false instead of reading it as absent" do
+    defaults.include_replies = true
+
+    sub = build({ "accounts" => %w[paulg], "include_replies" => false })
+
+    expect(sub.include_replies).to be(false)
+  end
+
+  it "treats a zero cap as a real value rather than a missing one" do
+    sub = build({ "accounts" => %w[paulg], "max_solo_picks" => 0 })
+
+    expect(sub.max_solo_picks).to eq(0)
   end
 
   it "ignores an email written in the config when one is supplied alongside it" do

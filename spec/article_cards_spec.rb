@@ -82,7 +82,7 @@ RSpec.describe Xtricate::Digest do
     it "omits the preview keys entirely for a link no card covered" do
       entry = payload_articles(nil).first
 
-      expect(entry.keys).to eq(%i[url sharers engagement preferred mention_ids])
+      expect(entry.keys).to eq(%i[url sharers sharer_count engagement preferred])
     end
   end
 

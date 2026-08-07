@@ -51,6 +51,10 @@ module Xtricate
     ARTICLE_TYPES = %w[long_form short_form news_bulletin other].freeze
     MAX_ARTICLES = 10
     MAX_LONG_FORM = 3
+    MAX_PAYLOAD_ARTICLES = 60
+    MAX_PREFERRED_IN_PAYLOAD = 20
+    MAX_MODEL_TEXT_CHARS = 2000
+    MAX_PAYLOAD_SHARERS = 6
 
     SYSTEM_PROMPT = <<~SYS.freeze
       You organize a weekly digest of Twitter activity. You are NOT a
@@ -59,9 +63,9 @@ module Xtricate
       think. Your only job is to GROUP tweets and RANK shared links.
 
       You receive JSON with tweets (each has id, author, kind, text, urls) and
-      articles (each has url, sharers, mentions, and — when the link preview was
-      available — title, description, outlet). Return strict JSON in this
-      exact shape — nothing else, no prose, no code fences:
+      articles (each has url, a sample of sharers, sharer_count, engagement, and
+      — when the link preview was available — title, description, outlet). Return
+      strict JSON in this exact shape — nothing else, no prose, no code fences:
 
       {
         "themes": [
@@ -99,8 +103,8 @@ module Xtricate
         they have low engagement or only one sharer. Fall back to
         non-preferred long_form candidates only if there aren't 3 preferred
         ones.
-      - For short_form, news_bulletin, and other: rank by distinct sharers
-        first, then total engagement.
+      - For short_form, news_bulletin, and other: rank by sharer_count first,
+        then total engagement.
       - If fewer than 3 long_form candidates exist in the input, include as
         many long_form as actually exist. Do not invent.
       - Classify from `title`, `description`, and `outlet` when they are
@@ -129,11 +133,17 @@ module Xtricate
 
     def initialize(api_key:, model:, since:, lookback_days:,
                    preferred_outlets: [],
+                   max_solo_picks: 25, max_payload_tweets: 150,
+                   payload_tweets_per_account: 3, max_discoveries: 5,
                    client: nil, og_fetcher: nil, logger: nil)
       @model = model
       @since = since
       @lookback_days = lookback_days
       @preferred_outlets = Array(preferred_outlets).map(&:downcase)
+      @max_solo_picks = max_solo_picks
+      @max_payload_tweets = max_payload_tweets
+      @payload_tweets_per_account = payload_tweets_per_account
+      @max_discoveries = max_discoveries
       @logger = logger
       @client = client || Anthropic::Client.new(api_key: api_key)
       @og_fetcher = og_fetcher || OgFetch.new(logger: logger)
@@ -186,7 +196,7 @@ module Xtricate
         Array(t.urls).each { |u| by_url[normalize_url(u)] << t }
       end
       by_url
-        .map { |url, mentions| ArticleCluster.new(url: url, mentions: mentions.uniq) }
+        .map { |url, mentions| ArticleCluster.new(url: url, mentions: mentions.uniq { |m| m.id }) }
         .sort_by { |c| -c.total_engagement }
     end
 
@@ -200,7 +210,7 @@ module Xtricate
         next if best.nil?
 
         SoloPick.new(handle: activity.handle, source: activity.source, tweet: best)
-      end.sort_by { |p| -p.tweet.engagement }
+      end.sort_by { |p| -p.tweet.engagement }.first(@max_solo_picks)
     end
 
     private
@@ -233,10 +243,10 @@ module Xtricate
     # logical post per thread instead of N disjoint tweets.
     def build_payload(activities, all_tweets, clusters, cards = {})
       payload_tweets = all_tweets.reject { |t| t.thread_member? && !t.thread_head? }
-      top_tweets = payload_tweets.sort_by { |t| -t.engagement }.first(150)
+      top_tweets = select_payload_tweets(payload_tweets)
 
-      top_articles = clusters.first(60)
-      preferred = clusters.select { |c| preferred_outlet?(c.url) }
+      top_articles = clusters.first(MAX_PAYLOAD_ARTICLES)
+      preferred = clusters.select { |c| preferred_outlet?(c.url) }.first(MAX_PREFERRED_IN_PAYLOAD)
       article_set = (top_articles + preferred).uniq { |c| c.url }
 
       {
@@ -248,15 +258,34 @@ module Xtricate
       }
     end
 
+    def select_payload_tweets(tweets)
+      per_account = Hash.new(0)
+      reserved = []
+      rest = []
+
+      tweets.sort_by { |t| -t.engagement }.each do |tweet|
+        if per_account[tweet.author] < @payload_tweets_per_account
+          per_account[tweet.author] += 1
+          reserved << tweet
+        else
+          rest << tweet
+        end
+      end
+
+      picked = reserved.first(@max_payload_tweets)
+      picked += rest.first(@max_payload_tweets - picked.size)
+      picked.sort_by { |t| -t.engagement }
+    end
+
     # The link preview Twitter scraped, when we have one: its headline and
     # description tell the model far more about length and depth than the URL.
     def article_for_model(cluster, cards)
       entry = {
         url: cluster.url,
-        sharers: cluster.sharers,
+        sharers: cluster.sharers.first(MAX_PAYLOAD_SHARERS),
+        sharer_count: cluster.sharers.size,
         engagement: cluster.total_engagement,
-        preferred: preferred_outlet?(cluster.url),
-        mention_ids: cluster.mentions.map { |m| m.id.to_s }
+        preferred: preferred_outlet?(cluster.url)
       }
 
       card = card_keys(cluster.url).filter_map { |k| cards[k] }.first
@@ -283,7 +312,7 @@ module Xtricate
         by: t.author,
         source: t.source,
         kind: t.kind,
-        text: text
+        text: text[0, MAX_MODEL_TEXT_CHARS]
       }
       h[:thread] = true if t.thread_head?
       h[:urls] = t.urls if t.urls && !t.urls.empty?
@@ -318,7 +347,7 @@ module Xtricate
 
       tally
         .sort_by { |_, e| -e[:count] }
-        .first(5)
+        .first(@max_discoveries)
         .map do |(handle, source), entry|
           Discovery.new(
             handle: handle,

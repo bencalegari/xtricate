@@ -264,4 +264,171 @@ RSpec.describe Xtricate::Fetch do
       expect(normalize(raw).link_map).to eq({})
     end
   end
+
+  describe "requests" do
+    Response = Struct.new(:status, :body, :headers, keyword_init: true) do
+      def success? = status.between?(200, 299)
+    end
+
+    def ok(tweets = [])
+      Response.new(status: 200, body: JSON.generate("tweets" => tweets), headers: {})
+    end
+
+    def error(status, headers: {})
+      Response.new(status: status, body: "upstream said no", headers: headers)
+    end
+
+    class RecordingConn
+      attr_reader :calls
+
+      def initialize(responses)
+        @responses = responses
+        @calls = []
+      end
+
+      def get(_endpoint, params)
+        @calls << params
+        @responses.shift || raise("no response queued for call #{@calls.size}")
+      end
+    end
+
+    def fetcher_for(conn, reply_handles: [], max_retries: 3, slept: [])
+      described_class.new(
+        api_key: "test", since: Time.at(0), conn: conn,
+        reply_handles: reply_handles, max_retries: max_retries,
+        throttle: instance_double(Xtricate::Throttle, acquire: nil),
+        sleeper: ->(seconds) { slept << seconds }
+      )
+    end
+
+    describe "includeReplies" do
+      it "asks for replies for a handle whose subscriber opted in" do
+        conn = RecordingConn.new([ok])
+
+        fetcher_for(conn, reply_handles: %w[dril]).fetch_account("dril")
+
+        expect(conn.calls.first[:includeReplies]).to be(true)
+      end
+
+      it "omits replies for a handle nobody opted into, so they are not billed for" do
+        conn = RecordingConn.new([ok])
+
+        fetcher_for(conn, reply_handles: %w[someoneelse]).fetch_account("dril")
+
+        expect(conn.calls.first[:includeReplies]).to be(false)
+      end
+
+      it "matches the opted-in handle regardless of case" do
+        conn = RecordingConn.new([ok])
+
+        fetcher_for(conn, reply_handles: %w[DRIL]).fetch_account("dril")
+
+        expect(conn.calls.first[:includeReplies]).to be(true)
+      end
+
+      it "omits replies when no subscriber opted in at all" do
+        conn = RecordingConn.new([ok])
+
+        fetcher_for(conn).fetch_account("dril")
+
+        expect(conn.calls.first[:includeReplies]).to be(false)
+      end
+    end
+
+    describe "retries" do
+      it "retries a rate-limited request and keeps the tweets from the retry" do
+        raw = { "id" => "1", "author" => { "userName" => "dril" }, "text" => "hello",
+                "createdAt" => "Mon Jan 06 12:00:00 +0000 2025" }
+        conn = RecordingConn.new([error(429), ok([raw])])
+
+        tweets = fetcher_for(conn).fetch_account("dril")
+
+        expect(conn.calls.size).to eq(2)
+        expect(tweets.map(&:id)).to eq(%w[1])
+      end
+
+      it "waits the number of seconds the server asked for" do
+        slept = []
+        conn = RecordingConn.new([error(429, headers: { "retry-after" => "7" }), ok])
+
+        fetcher_for(conn, slept: slept).fetch_account("dril")
+
+        expect(slept).to eq([7])
+      end
+
+      it "caps an implausible Retry-After so one account cannot stall the run" do
+        slept = []
+        conn = RecordingConn.new([error(429, headers: { "retry-after" => "3600" }), ok])
+
+        fetcher_for(conn, slept: slept).fetch_account("dril")
+
+        expect(slept).to eq([Xtricate::Http::MAX_RETRY_AFTER])
+      end
+
+      it "backs off further on each successive attempt" do
+        slept = []
+        conn = RecordingConn.new([error(500), error(500), ok])
+
+        fetcher_for(conn, slept: slept).fetch_account("dril")
+
+        expect(slept.first).to be < slept.last
+      end
+
+      it "keeps the jitter too small for one attempt's wait to reach the next one's" do
+        slept = []
+        20.times do
+          fetcher_for(RecordingConn.new([error(500), error(500), ok]), slept: slept)
+            .fetch_account("dril")
+        end
+        pairs = slept.each_slice(2)
+
+        expect(pairs.map(&:first).max).to be < pairs.map(&:last).min
+      end
+
+      it "gives up after max_retries and records the account as unfetched" do
+        conn = RecordingConn.new(Array.new(5) { error(503) })
+        fetcher = fetcher_for(conn, max_retries: 2)
+
+        expect(fetcher.fetch_account("dril")).to eq([])
+        expect(conn.calls.size).to eq(3)
+        expect(fetcher.failures).to eq(%w[dril])
+      end
+
+      it "does not retry a handle that no longer exists" do
+        conn = RecordingConn.new([error(404)])
+        fetcher = fetcher_for(conn)
+
+        expect(fetcher.fetch_account("deleted")).to eq([])
+        expect(conn.calls.size).to eq(1)
+        expect(fetcher.failures).to eq(%w[deleted])
+      end
+
+      it "retries a response that is not JSON at all" do
+        conn = RecordingConn.new(
+          [Response.new(status: 200, body: "<html>gateway</html>", headers: {}), ok]
+        )
+
+        expect { fetcher_for(conn).fetch_account("dril") }.not_to raise_error
+        expect(conn.calls.size).to eq(2)
+      end
+
+      it "leaves a successful account out of failures" do
+        fetcher = fetcher_for(RecordingConn.new([ok]))
+        fetcher.fetch_account("dril")
+
+        expect(fetcher.failures).to be_empty
+      end
+    end
+
+    describe "#fetch_all" do
+      it "returns one activity per handle, in the order given" do
+        conn = RecordingConn.new(Array.new(3) { ok })
+
+        activities = fetcher_for(conn).fetch_all(%w[alice bob carol])
+
+        expect(activities.map(&:handle)).to eq(%w[alice bob carol])
+        expect(activities.map(&:source).uniq).to eq(%i[twitter])
+      end
+    end
+  end
 end

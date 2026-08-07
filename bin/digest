@@ -75,7 +75,10 @@ config.validate!(mode: options[:mode], needs_twitter: twitter_handles.any?)
 max_lookback = subscribers.map(&:lookback_days).max
 fetch_since = Time.now - (max_lookback * 24 * 60 * 60)
 
+reply_handles = subscribers.select(&:include_replies).flat_map(&:accounts).map(&:downcase).uniq
+
 log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} Twitter + #{bluesky_handles.size} Bluesky account(s), looking back up to #{max_lookback} days."
+log.puts "Fetching replies for #{reply_handles.size} of #{twitter_handles.size} Twitter account(s)." if twitter_handles.any?
 
 # --- Fetch once for everyone (Twitter + Bluesky in parallel) ------------------
 activities = []
@@ -86,6 +89,8 @@ if twitter_handles.any?
     api_key: config.twitterapi_key,
     since: fetch_since,
     max_per_account: config.max_tweets_per_account,
+    reply_handles: reply_handles,
+    qps: config.fetch_qps,
     logger: log
   )
   twitter_thread = Thread.new do
@@ -99,6 +104,7 @@ if bluesky_handles.any?
   bluesky_fetcher = Xtricate::BlueskyFetch.new(
     since: fetch_since,
     max_per_account: config.max_tweets_per_account,
+    qps: config.fetch_qps,
     logger: log
   )
   bluesky_thread = Thread.new do
@@ -111,7 +117,13 @@ activities.concat(twitter_thread.value) if twitter_thread
 activities.concat(bluesky_thread.value) if bluesky_thread
 
 total = activities.sum { |a| (a.tweets || []).size }
+fetch_failures = (twitter_fetcher&.failures || []) + (bluesky_fetcher&.failures || [])
+fetch_attempted = twitter_handles.size + bluesky_handles.size
+systemic_fetch_failure = fetch_failures.size > (fetch_attempted * 0.1)
 log.puts "Fetched #{total} post(s) across #{activities.count { |a| !a.empty? }} active account(s)."
+if fetch_failures.any?
+  log.puts "#{fetch_failures.size} of #{fetch_attempted} account(s) could not be fetched and are missing from this run#{verbose ? ": #{fetch_failures.join(', ')}" : ''}."
+end
 
 if options[:mode] == :fetch_only
   subscribers.each do |sub|
@@ -172,6 +184,10 @@ subscribers.each do |sub|
     since: sub.since,
     lookback_days: sub.lookback_days,
     preferred_outlets: config.preferred_long_form_outlets,
+    max_solo_picks: sub.max_solo_picks,
+    max_payload_tweets: sub.max_payload_tweets,
+    payload_tweets_per_account: sub.payload_tweets_per_account,
+    max_discoveries: sub.max_discoveries,
     og_fetcher: og_fetcher,
     logger: log
   )
@@ -191,7 +207,7 @@ subscribers.each do |sub|
         File.join(ROOT, "digest-#{sub.id}.html")
       end
     File.write(path, html)
-    log.puts "[#{sub.id}] wrote #{path} (#{posts} post(s), #{result.themes.size} theme(s)). Subject: #{subject.inspect}"
+    log.puts "[#{sub.id}] wrote #{path} (#{posts} post(s), #{result.themes.size} theme(s), #{result.solo_picks.size} solo pick(s), #{html.bytesize} bytes). Subject: #{subject.inspect}"
     next
   end
 
@@ -205,5 +221,5 @@ end
 resolution.failures.each { |id, msg| log.puts "#{id} could not be loaded: #{msg}" }
 
 sent = subscribers.size - failures.size - skipped
-log.puts "Done: #{sent} delivered, #{skipped} empty, #{failures.size} failed."
-exit 1 if failures.any? || resolution.failures.any?
+log.puts "Done: #{sent} delivered, #{skipped} empty, #{failures.size} failed, #{fetch_failures.size} account(s) unfetched."
+exit 1 if failures.any? || resolution.failures.any? || systemic_fetch_failure

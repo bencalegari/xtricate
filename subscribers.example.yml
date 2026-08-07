@@ -6,6 +6,11 @@
     - pfrazee.com
   timezone: America/Los_Angeles
   lookback_days: 7
+  include_replies: true
+  max_solo_picks: 25
+  max_payload_tweets: 150
+  payload_tweets_per_account: 3
+  max_discoveries: 5
 
 - email: friend@example.com
   accounts: karpathy, simonw

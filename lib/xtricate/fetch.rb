@@ -2,8 +2,12 @@ require "faraday"
 require "json"
 require "time"
 
+require "set"
+
 require_relative "models"
 require_relative "entities"
+require_relative "http"
+require_relative "pool"
 
 module Xtricate
   # Pulls recent tweets for each followed account from twitterapi.io and
@@ -23,18 +27,36 @@ module Xtricate
       photo_image_full_size summary_photo_image thumbnail_image
     ].freeze
 
-    def initialize(api_key:, since:, max_per_account: 100, conn: nil, logger: nil)
+    include Http
+
+    attr_reader :failures
+
+    def initialize(api_key:, since:, max_per_account: 100, reply_handles: [], qps: 4,
+                   max_retries: 3, conn: nil, throttle: nil, sleeper: nil, logger: nil)
       @api_key = api_key
       @since = since
       @max_per_account = max_per_account
+      @reply_handles = reply_handles.map { |h| h.to_s.downcase }.to_set
+      @max_retries = max_retries
       @logger = logger
       @conn = conn || build_conn
+      @throttle = throttle || Throttle.new(qps: qps)
+      @sleeper = sleeper || ->(seconds) { sleep(seconds) }
+      @threads = [(qps * 2).ceil, 1].max
+      @failures = []
+      @failures_lock = Mutex.new
     end
 
     # Returns Array<AccountActivity>, one per handle (empty ones included so
     # the summary can note who was quiet).
     def fetch_all(handles)
-      handles.map { |h| AccountActivity.new(handle: h, tweets: fetch_account(h), source: :twitter) }
+      Pool.map(handles, threads: @threads) do |handle|
+        AccountActivity.new(handle: handle, tweets: fetch_account(handle), source: :twitter)
+      end
+    end
+
+    def replies_for?(handle)
+      @reply_handles.include?(handle.to_s.downcase)
     end
 
     # Returns Array<Tweet> for one handle, within the lookback window.
@@ -66,8 +88,9 @@ module Xtricate
       end
 
       tweets
-    rescue Faraday::Error => e
+    rescue *Http::RETRYABLE => e
       log "  ! fetch failed for @#{handle}: #{e.message}"
+      @failures_lock.synchronize { @failures << handle }
       []
     end
 
@@ -83,17 +106,14 @@ module Xtricate
     end
 
     def request(handle, cursor)
-      # includeReplies surfaces the user's self-thread continuations. We filter
-      # out replies-to-others in normalize() to avoid pulling in conversation
-      # noise we don't have context for.
-      params = { userName: handle, includeReplies: true }
-      params[:cursor] = cursor if cursor && !cursor.to_s.empty?
-      resp = @conn.get(ENDPOINT, params)
-      unless resp.success?
-        raise Faraday::Error, "HTTP #{resp.status}: #{resp.body.to_s[0, 200]}"
-      end
+      with_retries("@#{handle}") do
+        params = { userName: handle, includeReplies: replies_for?(handle) }
+        params[:cursor] = cursor if cursor && !cursor.to_s.empty?
+        resp = @conn.get(ENDPOINT, params)
+        raise_unless_ok(resp)
 
-      JSON.parse(resp.body)
+        JSON.parse(resp.body)
+      end
     end
 
     def extract_tweets(body)

@@ -151,10 +151,49 @@ Global knobs, shared by every subscriber.
 | `lookback_days` | 7 | Default window; a subscriber may override |
 | `model` | `claude-sonnet-4-6` | Claude model used to write the digest |
 | `max_tweets_per_account` | 100 | Per-account fetch cap |
+| `include_replies` | `false` | Fetch replies too, so self-threads assemble. Costs roughly 30–40% more; a subscriber may override |
+| `fetch_qps` | 4 | Sustained requests/second per source. Keep under your twitterapi.io plan's QPS limit |
+| `max_solo_picks` | 25 | Accounts shown in "Everyone else", loudest first; a subscriber may override |
+| `max_payload_tweets` | 150 | Posts sent to Claude per run; a subscriber may override |
+| `payload_tweets_per_account` | 3 | Posts each account is guaranteed before leftover budget is filled by engagement; a subscriber may override |
+| `max_discoveries` | 5 | Accounts suggested in "Accounts to consider"; a subscriber may override |
 | `sender_name` | Xtricate Digest | Display name on the From line |
 | `timezone` | `America/Los_Angeles` | Default IANA TZ; a subscriber may override |
 | `preferred_long_form_outlets` | (list of left-wing outlets) | Domains to prioritize for long-form picks |
 
 ## Cost
 
-twitterapi.io ~$1–2/mo · Anthropic a few cents per subscriber per run · GitHub Actions + Gmail free.
+Anthropic is a few cents per subscriber per run — the payload is capped, so it does not
+grow with the follow list. GitHub Actions and Gmail are free. twitterapi.io is the real
+bill, and it scales with how many *pages* of timeline get fetched.
+
+twitterapi.io charges 100k credits per dollar and 15 credits per tweet returned.
+`last_tweets` has no page-size parameter and returns 20 tweets per page, so **one page
+costs 300 credits** — billed in full even when most of the page falls outside the
+lookback window. An account posting under 20 times a week is one page; 100+ posts hits
+the `max_tweets_per_account` cap at five. Weekly runs, on the Starter plan:
+
+| Accounts followed | ~1 page each | ~3 pages each | 5 pages each |
+| --- | --- | --- | --- |
+| 25 | <$1/mo | <$1/mo | ~$1/mo |
+| 500 | ~$7/mo | ~$18/mo | ~$30/mo |
+| 2,000 | ~$29/mo | ~$72/mo | ~$120/mo |
+
+`include_replies: true` roughly doubles the pages for a heavy poster, because replies to
+other people are returned, billed, and then discarded — only self-replies are kept, and
+those are what make threads work. Leave it off unless threads matter to that subscriber.
+
+Plan choice matters less than it looks: the top-up bonus matches the subscription bonus,
+so overage bills at the same rate. Starter ($29/mo, 108k credits per dollar) beats
+Builder until ~10.8M credits/month and Pro until ~22.7M — a bigger plan costs more, it
+does not buy a better deal until you actually consume that much.
+
+Unused credits **do not expire**, so a month under the plan allowance banks the
+remainder rather than wasting it. Each tier also rebates a share of every payment
+(Starter 5%, Pro 15%) as bonus credits released over the following 12 months, so the
+rebate ramps up across the first year and only reaches its headline value once twelve
+installments overlap. Rebate installments *do* expire 31 days after release, unlike plan
+credits.
+
+The plan's QPS limit is the real constraint — set `fetch_qps` below it. A 2,000-account
+run at Starter's 5 QPS spends 13–33 minutes in the fetch phase alone.

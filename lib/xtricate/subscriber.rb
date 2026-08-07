@@ -3,6 +3,8 @@ require_relative "config"
 module Xtricate
   Subscriber = Struct.new(
     :id, :email, :accounts, :bluesky_accounts, :timezone, :lookback_days,
+    :include_replies, :max_solo_picks, :max_payload_tweets,
+    :payload_tweets_per_account, :max_discoveries,
     keyword_init: true
   ) do
     def since
@@ -47,13 +49,27 @@ module Xtricate
         accounts: accounts,
         bluesky_accounts: bluesky,
         timezone: presence(yml["timezone"]) || defaults.timezone,
-        lookback_days: lookback.nil? ? defaults.lookback_days : Integer(lookback)
+        lookback_days: lookback.nil? ? defaults.lookback_days : Integer(lookback),
+        include_replies: flag(yml, "include_replies", defaults.include_replies),
+        max_solo_picks: count(yml, "max_solo_picks", defaults.max_solo_picks),
+        max_payload_tweets: count(yml, "max_payload_tweets", defaults.max_payload_tweets),
+        payload_tweets_per_account:
+          count(yml, "payload_tweets_per_account", defaults.payload_tweets_per_account),
+        max_discoveries: count(yml, "max_discoveries", defaults.max_discoveries)
       )
     end
 
     def presence(str)
       s = str.to_s.strip
       s.empty? ? nil : s
+    end
+
+    def flag(yml, key, default)
+      yml.key?(key) ? !!yml[key] : default
+    end
+
+    def count(yml, key, default)
+      yml[key].nil? ? default : Integer(yml[key])
     end
   end
 end

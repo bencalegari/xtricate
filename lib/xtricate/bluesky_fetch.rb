@@ -4,6 +4,8 @@ require "time"
 
 require_relative "models"
 require_relative "entities"
+require_relative "http"
+require_relative "pool"
 
 module Xtricate
   # Pulls recent posts for each followed Bluesky account using the unauthenticated
@@ -26,16 +28,27 @@ module Xtricate
     BASE_URL = "https://public.api.bsky.app".freeze
     ENDPOINT = "/xrpc/app.bsky.feed.getAuthorFeed".freeze
 
-    def initialize(since:, max_per_account: 100, conn: nil, logger: nil)
+    include Http
+
+    attr_reader :failures
+
+    def initialize(since:, max_per_account: 100, qps: 4, max_retries: 3,
+                   conn: nil, throttle: nil, sleeper: nil, logger: nil)
       @since = since
       @max_per_account = max_per_account
+      @max_retries = max_retries
       @logger = logger
       @conn = conn || build_conn
+      @throttle = throttle || Throttle.new(qps: qps)
+      @sleeper = sleeper || ->(seconds) { sleep(seconds) }
+      @threads = [(qps * 2).ceil, 1].max
+      @failures = []
+      @failures_lock = Mutex.new
     end
 
     def fetch_all(handles)
-      handles.map do |h|
-        AccountActivity.new(handle: h, tweets: fetch_account(h), source: :bluesky)
+      Pool.map(handles, threads: @threads) do |handle|
+        AccountActivity.new(handle: handle, tweets: fetch_account(handle), source: :bluesky)
       end
     end
 
@@ -65,8 +78,9 @@ module Xtricate
       end
 
       tweets
-    rescue Faraday::Error => e
+    rescue *Http::RETRYABLE => e
       log "  ! bluesky fetch failed for @#{handle}: #{e.message}"
+      @failures_lock.synchronize { @failures << handle }
       []
     end
 
@@ -81,12 +95,14 @@ module Xtricate
     end
 
     def request(handle, cursor)
-      params = { actor: handle, limit: 100 }
-      params[:cursor] = cursor if cursor && !cursor.empty?
-      resp = @conn.get(ENDPOINT, params)
-      raise Faraday::Error, "HTTP #{resp.status}: #{resp.body.to_s[0, 200]}" unless resp.success?
+      with_retries("@#{handle}") do
+        params = { actor: handle, limit: 100 }
+        params[:cursor] = cursor if cursor && !cursor.empty?
+        resp = @conn.get(ENDPOINT, params)
+        raise_unless_ok(resp)
 
-      JSON.parse(resp.body)
+        JSON.parse(resp.body)
+      end
     end
 
     def normalize(item, follower:)

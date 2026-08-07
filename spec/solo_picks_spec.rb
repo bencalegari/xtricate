@@ -116,6 +116,38 @@ RSpec.describe Xtricate::Digest do
       expect(picks.map(&:handle)).to eq(%w[b a])
     end
 
+    context "with a cap" do
+      subject(:digest) do
+        described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
+                            lookback_days: 7, max_solo_picks: 2,
+                            client: :unused, og_fetcher: :unused)
+      end
+
+      let(:activities) do
+        (1..5).map { |i| activity("a#{i}", [post(id: i.to_s, author: "a#{i}", likes: i * 10)]) }
+      end
+
+      it "keeps the loudest accounts and drops the quiet tail" do
+        picks = digest.build_solo_picks(activities, [], [])
+
+        expect(picks.map(&:handle)).to eq(%w[a5 a4])
+      end
+
+      it "drops the section entirely at a cap of zero" do
+        capped = described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
+                                     lookback_days: 7, max_solo_picks: 0,
+                                     client: :unused, og_fetcher: :unused)
+
+        expect(capped.build_solo_picks(activities, [], [])).to be_empty
+      end
+
+      it "returns everyone when there are fewer accounts than the cap" do
+        picks = digest.build_solo_picks(activities.first(1), [], [])
+
+        expect(picks.map(&:handle)).to eq(%w[a1])
+      end
+    end
+
     it "carries the account's source so bluesky picks link to bsky.app" do
       pick = digest.build_solo_picks(
         [activity("dril.bsky.social", [post(id: "1", author: "dril.bsky.social", source: :bluesky)],

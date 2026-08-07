@@ -7,6 +7,9 @@ module Xtricate
     attr_reader :lookback_days, :model, :max_tweets_per_account,
                 :sender_name, :timezone,
                 :preferred_long_form_outlets,
+                :include_replies, :max_solo_picks,
+                :max_payload_tweets, :payload_tweets_per_account,
+                :max_discoveries, :fetch_qps,
                 :twitterapi_key, :anthropic_key,
                 :gmail_address, :gmail_app_password,
                 :subscribers_raw
@@ -23,6 +26,13 @@ module Xtricate
       @sender_name            = yml.fetch("sender_name", "Xtricate Digest")
       @timezone               = yml.fetch("timezone", "America/New_York")
       @preferred_long_form_outlets = Array(yml["preferred_long_form_outlets"]).map { |h| h.to_s.downcase.strip }.reject(&:empty?)
+
+      @include_replies = yml.key?("include_replies") ? !!yml["include_replies"] : false
+      @max_solo_picks                 = Integer(yml.fetch("max_solo_picks", 25))
+      @max_payload_tweets             = Integer(yml.fetch("max_payload_tweets", 150))
+      @payload_tweets_per_account = Integer(yml.fetch("payload_tweets_per_account", 3))
+      @max_discoveries                = Integer(yml.fetch("max_discoveries", 5))
+      @fetch_qps                      = Integer(yml.fetch("fetch_qps", 4))
 
       @twitterapi_key    = ENV["TWITTERAPI_IO_KEY"]
       @anthropic_key     = ENV["ANTHROPIC_API_KEY"]
