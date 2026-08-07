@@ -27,7 +27,7 @@
             <% end %>
           </div>
           <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(rt.amplified_text, rt) %></div>
-          <%= render_media(rt.media) %>
+          <%= render_media(rt.media, rt) %>
           <% if rt.quoted_inner_text && !rt.quoted_inner_text.empty? %>
             <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
               <% if rt.quoted_inner_author %>
@@ -69,7 +69,7 @@
             <% end %>
           </div>
           <div style="font-size:15px; line-height:1.55; color:#111827; margin-top:4px; white-space:pre-wrap;"><%= render_tweet_text(t.text, t) %></div>
-          <%= render_media(t.media) %>
+          <%= render_media(t.media, t) %>
 
           <% if t.kind == :quote && t.quoted_text && !t.quoted_text.empty? %>
             <div style="border-left:2px solid #d1d5db; padding:6px 0 6px 12px; margin:8px 0 4px;">
@@ -84,7 +84,7 @@
             <% t.thread_continuations.each do |cont| %>
               <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #e5e7eb;">
                 <div style="font-size:15px; line-height:1.55; color:#111827; white-space:pre-wrap;"><%= render_tweet_text(cont.text, cont) %></div>
-                <%= render_media(cont.media) %>
+                <%= render_media(cont.media, cont) %>
               </div>
             <% end %>
           <% end %>

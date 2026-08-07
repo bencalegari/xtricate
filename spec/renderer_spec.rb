@@ -240,6 +240,93 @@ RSpec.describe Xtricate::Renderer do
     end
   end
 
+  describe "#minify whitespace between inline elements" do
+    def units_html(*tweets) = renderer.minify(renderer.render_units(tweets))
+
+    it "keeps the space between the retweet label and the retweeter's handle" do
+      html = units_html(retweet(id: "2", by: "willmenaker", of: "1", from: "CNN"))
+
+      expect(html).to include(%(Retweeted by</span> <a href="https://x.com/willmenaker"))
+    end
+
+    it "keeps the space between a quoting author and the account they quote" do
+      t = tweet(id: "3", author: "sethharpesq", kind: :quote, quoted_author: "schwarz",
+                quoted_text: "the source post", text: "commentary")
+
+      expect(units_html(t)).to include(%(>@sethharpesq</a> <span))
+    end
+
+    it "still closes up the gap between block-level tags" do
+      expect(units_html(original(id: "1", author: "alice"))).not_to include("</div> <div")
+    end
+  end
+
+  describe "#render_media" do
+    def photo(url:, thumb:, alt: nil)
+      Xtricate::MediaItem.new(type: :photo, url: url, thumb: thumb, alt: alt)
+    end
+
+    def video(thumb:)
+      Xtricate::MediaItem.new(type: :video, url: thumb, thumb: thumb)
+    end
+
+    it "clicks a photo thumb through to the large rendition of the full-size image" do
+      html = renderer.render_media([photo(url: "https://pbs.twimg.com/media/ABC.jpg",
+                                          thumb: "https://pbs.twimg.com/media/ABC.jpg?name=small")])
+
+      expect(html).to include(%(<a href="https://pbs.twimg.com/media/ABC.jpg?name=large" target="_blank"))
+    end
+
+    it "keeps the format parameter when upgrading to the large rendition" do
+      html = renderer.render_media([photo(url: "https://pbs.twimg.com/media/ABC?format=jpg&name=small",
+                                          thumb: "https://pbs.twimg.com/media/ABC?format=jpg&name=360x360")])
+
+      expect(html).to include("format=jpg")
+      expect(html).to include("name=large")
+      expect(html).not_to include("name=small")
+    end
+
+    it "still shows the small thumb inside the link" do
+      html = renderer.render_media([photo(url: "https://pbs.twimg.com/media/ABC.jpg",
+                                          thumb: "https://pbs.twimg.com/media/ABC.jpg?name=small")])
+
+      expect(html).to include(%(<img src="https://pbs.twimg.com/media/ABC.jpg?name=small"))
+    end
+
+    it "clicks a video thumb through to the post, since the still is not the video" do
+      t = tweet(id: "500", author: "trey", kind: :original, text: "clip")
+      html = renderer.render_media([video(thumb: "https://pbs.twimg.com/ext_tw_video_thumb/1.jpg")], t)
+
+      expect(html).to include(%(href="https://twitterwebviewer.com/?tweet=500"))
+    end
+
+    it "sends a retweeted video to the original post rather than the retweet" do
+      rt = retweet(id: "200", by: "will", of: "100", from: "seth")
+      html = renderer.render_media([video(thumb: "https://pbs.twimg.com/ext_tw_video_thumb/1.jpg")], rt)
+
+      expect(html).to include(%(href="https://twitterwebviewer.com/?tweet=100"))
+    end
+
+    it "links a bluesky photo to the fullsize url it came with" do
+      html = renderer.render_media([photo(url: "https://cdn.bsky.app/img/feed_fullsize/plain/did/cid@jpeg",
+                                          thumb: "https://cdn.bsky.app/img/feed_thumbnail/plain/did/cid@jpeg")])
+
+      expect(html).to include(%(href="https://cdn.bsky.app/img/feed_fullsize/plain/did/cid@jpeg"))
+    end
+
+    it "falls back to the post when a video thumb has no post to link to" do
+      html = renderer.render_media([video(thumb: "https://pbs.twimg.com/ext_tw_video_thumb/1.jpg")])
+
+      expect(html).to include("<img")
+      expect(html).not_to include("<a href")
+    end
+
+    it "renders nothing when there is no media" do
+      expect(renderer.render_media([])).to eq("")
+      expect(renderer.render_media(nil)).to eq("")
+    end
+  end
+
   describe "timezone handling" do
     let(:at) { Time.parse("2026-06-08 17:30 UTC") }
 

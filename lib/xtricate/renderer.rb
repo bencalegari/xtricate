@@ -72,9 +72,12 @@ module Xtricate
       "Your Twitter digest — #{result.period_label}"
     end
 
+    INLINE_TAG = /(?:a|span|b|strong|em|i|small|code|u|img|br)/.freeze
+
     def minify(html)
       html
         .gsub(/^[ \t]+(?=<)/, "")
+        .gsub(%r{(</#{INLINE_TAG}>|<(?:img|br)\b[^>]*>)\s*\n\s*(?=<#{INLINE_TAG}[\s/>])}) { "#{$1} " }
         .gsub(/>\n\s*</, "><")
         .gsub(/style="([^"]*)"/) { %(style="#{$1.gsub(/\s*;\s*/, ";").gsub(/:\s+/, ":").strip}") }
     end
@@ -138,7 +141,7 @@ module Xtricate
 
     # Inline media thumbnails for tweet/post cards. Up to 4 per card, capped to
     # keep the email tight. Returns "" if there's no media.
-    def render_media(items)
+    def render_media(items, tweet = nil)
       return "" if items.nil? || items.empty?
 
       thumbs = items.first(4)
@@ -153,12 +156,32 @@ module Xtricate
         # CSS-positioned overlay (negative-margin overlays break in most email
         # clients and leave a cell-height-tall gap below the image).
         badge = m.type == :video ? %(<div style="font-size:11px; color:#6b7280; margin-top:2px;">&#9658; Video</div>) : ""
-        %(<td valign="top" style="padding:2px;"><img src="#{h(src)}" alt="#{h(m.alt || '')}" width="#{cell_w}" height="#{cell_h}" style="display:block; border-radius:8px; width:#{cell_w}px; height:#{cell_h}px; object-fit:cover; background:#f4f5f7;">#{badge}</td>)
+        img = %(<img src="#{h(src)}" alt="#{h(m.alt || '')}" width="#{cell_w}" height="#{cell_h}" style="display:block; border-radius:8px; width:#{cell_w}px; height:#{cell_h}px; object-fit:cover; background:#f4f5f7;">)
+        href = media_href(m, tweet)
+        linked = href ? %(<a href="#{h(href)}" target="_blank" style="text-decoration:none;">#{img}</a>) : img
+        %(<td valign="top" style="padding:2px;">#{linked}#{badge}</td>)
       end.compact.join
 
       return "" if cells.empty?
 
       %(<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:8px;"><tr>#{cells}</tr></table>)
+    end
+
+    def media_href(item, tweet)
+      post = tweet && (tweet.retweet? ? (tweet.quoted_permalink || tweet.permalink) : tweet.permalink)
+      return post if item.type == :video || item.type == :gif
+
+      full_size_media_url(item.url || item.thumb) || post
+    end
+
+    def full_size_media_url(url)
+      return nil if url.nil? || url.to_s.empty?
+      return url unless url.include?("pbs.twimg.com")
+
+      base, query = url.split("?", 2)
+      params = CGI.parse(query.to_s).transform_values(&:first)
+      params["name"] = "large"
+      "#{base}?#{params.map { |k, v| "#{CGI.escape(k)}=#{CGI.escape(v)}" }.join('&')}"
     end
 
     # Same idea for Discovery rows.
