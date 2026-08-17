@@ -124,6 +124,16 @@ RSpec.describe Xtricate::SubscriberSource do
       expect(result.subscribers.first.accounts).to eq(%w[simonw])
     end
 
+    it "says why every gist failed when none of them load" do
+      conn, = stubbed_conn do |s|
+        s.get("https://api.github.com/gists/1111aaaa") { [401, {}, "bad credentials"] }
+      end
+      defaults.subscribers_raw = "reader@example.com|https://gist.github.com/a/1111aaaa"
+
+      expect { resolve(conn: conn, root: Dir.mktmpdir) }
+        .to raise_error(Xtricate::ConfigError, /subscriber-1: gist request failed \(HTTP 401\)/)
+    end
+
     it "never puts a gist URL or an email in its log output" do
       conn, = stubbed_conn do |s|
         s.get("https://api.github.com/gists/1111aaaa") { [200, {}, gist_body(accounts: %w[paulg])] }
@@ -135,6 +145,42 @@ RSpec.describe Xtricate::SubscriberSource do
 
       expect(out.string).not_to include("1111aaaa")
       expect(out.string).not_to include("reader@example.com")
+    end
+  end
+
+  describe "authenticating gist requests" do
+    def with_env(**vars)
+      original = ENV.to_hash
+      %w[GITHUB_TOKEN XTRICATE_GIST_TOKEN].each { |k| ENV.delete(k) }
+      vars.each { |k, v| ENV[k.to_s] = v }
+      yield
+    ensure
+      ENV.replace(original)
+    end
+
+    def auth_header(**vars)
+      with_env(**vars) do
+        described_class.new(config: defaults).send(:conn).headers["Authorization"]
+      end
+    end
+
+    it "omits the Authorization header for the Actions installation token, which cannot read gists" do
+      expect(auth_header(GITHUB_TOKEN: "ghs_actionsinstallationtoken")).to be_nil
+    end
+
+    it "sends a personal access token from GITHUB_TOKEN" do
+      expect(auth_header(GITHUB_TOKEN: "ghp_personaltoken")).to eq("Bearer ghp_personaltoken")
+    end
+
+    it "prefers XTRICATE_GIST_TOKEN over GITHUB_TOKEN" do
+      header = auth_header(GITHUB_TOKEN: "ghs_actionsinstallationtoken",
+                           XTRICATE_GIST_TOKEN: "ghp_personaltoken")
+
+      expect(header).to eq("Bearer ghp_personaltoken")
+    end
+
+    it "omits the Authorization header when no token is set" do
+      expect(auth_header).to be_nil
     end
   end
 

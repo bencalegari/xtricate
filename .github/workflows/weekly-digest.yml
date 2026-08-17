@@ -21,7 +21,7 @@ jobs:
       - name: Send digest
         env:
           XTRICATE_SUBSCRIBERS: ${{ secrets.XTRICATE_SUBSCRIBERS }}
-          GITHUB_TOKEN: ${{ github.token }}
+          XTRICATE_GIST_TOKEN: ${{ secrets.XTRICATE_GIST_TOKEN }}
           TWITTERAPI_IO_KEY: ${{ secrets.TWITTERAPI_IO_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}

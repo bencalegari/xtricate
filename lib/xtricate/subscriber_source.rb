@@ -13,6 +13,7 @@ module Xtricate
     API_HOST = "https://api.github.com".freeze
     PREFERRED_FILES = %w[xtricate.yml xtricate.yaml].freeze
     GIST_ID = /\A[0-9a-f]{8,}\z/i.freeze
+    ACTIONS_TOKEN_PREFIX = "ghs_".freeze
 
     Resolution = Struct.new(:subscribers, :origin, :failures, keyword_init: true) do
       def gists? = origin == :gists
@@ -114,7 +115,10 @@ module Xtricate
         end
       end
 
-      raise ConfigError, "no subscriber gists could be loaded" if subscribers.empty?
+      if subscribers.empty?
+        detail = failures.map { |id, msg| "#{id}: #{msg}" }.join("; ")
+        raise ConfigError, "no subscriber gists could be loaded (#{detail})"
+      end
 
       log "Subscribers: #{subscribers.size} of #{pairs.size} gist config(s) loaded."
       Resolution.new(subscribers: subscribers, origin: :gists, failures: failures)
@@ -175,11 +179,18 @@ module Xtricate
       @conn ||= Faraday.new do |f|
         f.headers["Accept"] = "application/vnd.github+json"
         f.headers["User-Agent"] = "xtricate"
-        token = presence(ENV["GITHUB_TOKEN"])
+        token = gist_token
         f.headers["Authorization"] = "Bearer #{token}" if token
         f.options.timeout = 15
         f.options.open_timeout = 8
       end
+    end
+
+    def gist_token
+      token = presence(ENV["XTRICATE_GIST_TOKEN"]) || presence(ENV["GITHUB_TOKEN"])
+      return nil if token.nil? || token.start_with?(ACTIONS_TOKEN_PREFIX)
+
+      token
     end
 
     def mask(url)
