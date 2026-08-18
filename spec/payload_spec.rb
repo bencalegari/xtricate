@@ -3,7 +3,7 @@ require "xtricate/digest"
 RSpec.describe Xtricate::Digest do
   def digest(**overrides)
     described_class.new(
-      **{ api_key: "k", model: "m", since: Time.now - 604_800, lookback_days: 7,
+      **{ api_key: "k", model: "m", window: week_window,
           client: :unused, og_fetcher: :unused }.merge(overrides)
     )
   end

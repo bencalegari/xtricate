@@ -55,6 +55,18 @@ RSpec.describe Xtricate::ActivitySlice do
     expect(long.first.tweets.map(&:id)).to eq(%w[new old])
   end
 
+  it "honours an explicit window over the subscriber's lookback_days" do
+    activities = [activity("paulg", [post(id: "recent", author: "paulg", days_ago: 1),
+                                     post(id: "older", author: "paulg", days_ago: 20)])]
+    window = Xtricate::Window.new(start_at: Time.now - (25 * 86_400),
+                                  end_at: Time.now - (10 * 86_400))
+
+    slice = described_class.for(subscriber(id: "s1", accounts: %w[paulg], lookback_days: 7),
+                                activities, window: window)
+
+    expect(slice.first.tweets.map(&:id)).to eq(%w[older])
+  end
+
   it "keeps posts with no timestamp rather than guessing they are stale" do
     undated = Xtricate::Tweet.new(id: "u", author: "paulg", kind: :original, text: "x",
                                   urls: [], created_at: nil, source: :x)

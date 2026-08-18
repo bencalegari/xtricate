@@ -1,4 +1,5 @@
 require_relative "config"
+require_relative "window"
 
 module Xtricate
   Subscriber = Struct.new(
@@ -7,8 +8,14 @@ module Xtricate
     :payload_tweets_per_account, :max_discoveries,
     keyword_init: true
   ) do
+    def window(override = nil, now: Time.now)
+      end_at = override&.end_at || now
+      start_at = override&.start_at || (end_at - (lookback_days * 24 * 60 * 60))
+      Window.new(start_at: start_at, end_at: end_at)
+    end
+
     def since
-      Time.now - (lookback_days * 24 * 60 * 60)
+      window.start_at
     end
 
     def handles

@@ -25,6 +25,8 @@ options = {
   limit: nil,
   subscribers: nil,
   only: nil,
+  since: ENV["XTRICATE_SINCE"],
+  until: ENV["XTRICATE_UNTIL"],
   verbose: false
 }
 
@@ -36,6 +38,8 @@ parser = OptionParser.new do |o|
   o.on("--out FILE", "Output path for --dry-run with a single subscriber (default: digest.html)") { |f| options[:out] = f }
   o.on("--out-dir DIR", "Directory for --dry-run output when there are several subscribers") { |d| options[:out_dir] = d }
   o.on("--subscribers FILE", "YAML subscriber list (default: subscribers.local.yml, else the XTRICATE_SUBSCRIBERS secret)") { |f| options[:subscribers] = f }
+  o.on("--since DATE", "Start of the window (YYYY-MM-DD or timestamp); defaults to lookback_days back") { |d| options[:since] = d }
+  o.on("--until DATE", "End of the window (YYYY-MM-DD is inclusive of that day); defaults to now") { |d| options[:until] = d }
   o.on("--only ID_OR_EMAIL", "Run for a single subscriber (id like subscriber-2, or their email)") { |s| options[:only] = s }
   o.on("--verbose", "Print handles and recipient addresses (never use in CI: public logs)") { options[:verbose] = true }
   o.on("-h", "--help", "Show this help") { puts o; exit }
@@ -45,6 +49,12 @@ parser.parse!(ARGV)
 log = $stdout
 config = Xtricate::Config.load(root: ROOT)
 ENV["TZ"] = config.timezone
+
+begin
+  window_override = Xtricate::WindowParser.parse(since: options[:since], until_at: options[:until])
+rescue Xtricate::WindowError => e
+  abort e.message
+end
 
 resolution = Xtricate::SubscriberSource.resolve(
   config: config, root: ROOT, path: options[:subscribers], logger: log
@@ -72,12 +82,21 @@ twitter_handles = subscribers.flat_map(&:accounts).uniq
 bluesky_handles = subscribers.flat_map(&:bluesky_accounts).uniq
 config.validate!(mode: options[:mode], needs_twitter: twitter_handles.any?)
 
-max_lookback = subscribers.map(&:lookback_days).max
-fetch_since = Time.now - (max_lookback * 24 * 60 * 60)
+now = Time.now
+windows = subscribers.to_h { |s| [s.id, s.window(window_override, now: now)] }
+fetch_since = windows.values.map(&:start_at).min
+fetch_until = windows.values.map(&:end_at).max
+fetch_until = nil unless window_override&.end_at
 
 reply_handles = subscribers.select(&:include_replies).flat_map(&:accounts).map(&:downcase).uniq
 
-log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} Twitter + #{bluesky_handles.size} Bluesky account(s), looking back up to #{max_lookback} days."
+window_label =
+  if window_override
+    "window #{fetch_since.strftime('%Y-%m-%d %H:%M')} to #{(fetch_until || now).strftime('%Y-%m-%d %H:%M')}"
+  else
+    "looking back up to #{subscribers.map(&:lookback_days).max} days"
+  end
+log.puts "Xtricate: #{subscribers.size} subscriber(s), #{twitter_handles.size} Twitter + #{bluesky_handles.size} Bluesky account(s), #{window_label}."
 log.puts "Fetching replies for #{reply_handles.size} of #{twitter_handles.size} Twitter account(s)." if twitter_handles.any?
 
 # --- Fetch once for everyone (Twitter + Bluesky in parallel) ------------------
@@ -88,6 +107,7 @@ if twitter_handles.any?
   twitter_fetcher = Xtricate::Fetch.new(
     api_key: config.twitterapi_key,
     since: fetch_since,
+    until_at: fetch_until,
     max_per_account: config.max_tweets_per_account,
     reply_handles: reply_handles,
     qps: config.fetch_qps,
@@ -103,6 +123,7 @@ bluesky_thread = nil
 if bluesky_handles.any?
   bluesky_fetcher = Xtricate::BlueskyFetch.new(
     since: fetch_since,
+    until_at: fetch_until,
     max_per_account: config.max_tweets_per_account,
     qps: config.fetch_qps,
     logger: log
@@ -127,7 +148,7 @@ end
 
 if options[:mode] == :fetch_only
   subscribers.each do |sub|
-    slice = Xtricate::ActivitySlice.for(sub, activities)
+    slice = Xtricate::ActivitySlice.for(sub, activities, window: windows[sub.id])
     posts = slice.sum { |a| a.tweets.size }
     log.puts "\n[#{sub.id}] #{posts} post(s) across #{slice.count { |a| !a.empty? }} active account(s)."
     next unless verbose
@@ -169,11 +190,12 @@ failures = []
 skipped = 0
 
 subscribers.each do |sub|
-  slice = Xtricate::ActivitySlice.for(sub, activities)
+  window = windows[sub.id]
+  slice = Xtricate::ActivitySlice.for(sub, activities, window: window)
   posts = slice.sum { |a| a.tweets.size }
 
   if posts.zero?
-    log.puts "[#{sub.id}] no posts in their #{sub.lookback_days}-day window — skipping."
+    log.puts "[#{sub.id}] no posts in their #{window.days}-day window — skipping."
     skipped += 1
     next
   end
@@ -181,8 +203,7 @@ subscribers.each do |sub|
   digest = Xtricate::Digest.new(
     api_key: config.anthropic_key,
     model: config.model,
-    since: sub.since,
-    lookback_days: sub.lookback_days,
+    window: window,
     preferred_outlets: config.preferred_long_form_outlets,
     max_solo_picks: sub.max_solo_picks,
     max_payload_tweets: sub.max_payload_tweets,

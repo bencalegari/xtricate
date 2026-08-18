@@ -88,6 +88,25 @@ Useful flags: `--subscribers FILE` for an alternate list, `--only subscriber-2` 
 one person, `--out-dir DIR` for `--dry-run` with several subscribers, `--verbose` to print handles
 and addresses (local only — CI logs are public).
 
+### Backfilling a specific date range
+
+By default every run covers the last `lookback_days` up to now. `--since` and `--until` pin the
+window instead — useful for rebuilding a week you missed:
+
+```bash
+# One specific week (--until is inclusive of that day)
+bin/digest --dry-run --since 2026-08-01 --until 2026-08-07
+
+# Everything since a date, up to right now
+bin/digest --dry-run --since 2026-08-01
+
+# The lookback_days window ending on a past date
+bin/digest --dry-run --until 2026-08-07
+```
+
+Bare dates are read in the `timezone` from `config.yml`; a full timestamp (`2026-08-01T09:00:00`) is
+used as written. Give only one bound and each subscriber's own `lookback_days` supplies the other.
+
 ## Subscribing someone else
 
 Each subscriber keeps their own settings in their own gist, so you never hand-maintain their follow
@@ -144,7 +163,9 @@ parsing, gist loading, per-subscriber slicing and timezones, and the renderer's 
    `GMAIL_APP_PASSWORD`.
 3. Only `config.yml` is committed; everything personal lives in secrets and gists.
 4. The workflow in `.github/workflows/weekly-digest.yml` runs every Monday. Use the
-   **Actions** tab → *Weekly Twitter Digest* → **Run workflow** to trigger a test run.
+   **Actions** tab → *Weekly Twitter Digest* → **Run workflow** to trigger a test run. That form
+   takes optional `since` / `until` dates (`YYYY-MM-DD`); leave them blank for the usual
+   `lookback_days` window.
 
 Adjust the day/time by editing the `cron:` line in that workflow. A subscriber whose gist fails to
 load is skipped and the run still delivers to everyone else, then exits nonzero so you see the red X.

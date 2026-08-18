@@ -5,6 +5,7 @@ require "anthropic"
 
 require_relative "models"
 require_relative "og_fetch"
+require_relative "window"
 
 module Xtricate
   # Turns a week of raw account activity into a structured digest. Two steps:
@@ -131,14 +132,13 @@ module Xtricate
       - Output strict JSON. No code fences. No commentary outside the JSON.
     SYS
 
-    def initialize(api_key:, model:, since:, lookback_days:,
+    def initialize(api_key:, model:, window:,
                    preferred_outlets: [],
                    max_solo_picks: 25, max_payload_tweets: 150,
                    payload_tweets_per_account: 3, max_discoveries: 5,
                    client: nil, og_fetcher: nil, logger: nil)
       @model = model
-      @since = since
-      @lookback_days = lookback_days
+      @window = window
       @preferred_outlets = Array(preferred_outlets).map(&:downcase)
       @max_solo_picks = max_solo_picks
       @max_payload_tweets = max_payload_tweets
@@ -488,9 +488,7 @@ module Xtricate
     end
 
     def period_label
-      start = @since.strftime("%b %-d")
-      finish = Time.now.strftime("%b %-d, %Y")
-      "#{start} – #{finish}"
+      @window.label
     end
 
     def log(msg) = @logger&.puts(msg)

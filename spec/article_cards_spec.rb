@@ -4,8 +4,7 @@ RSpec.describe Xtricate::Digest do
   WSJ_URL = "https://www.wsj.com/finance/leopold-aschenbrenner-597633d3".freeze
 
   subject(:digest) do
-    described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
-                        lookback_days: 7, client: :unused, og_fetcher: og_fetcher)
+    described_class.new(api_key: "k", model: "m", window: week_window, client: :unused, og_fetcher: og_fetcher)
   end
 
   let(:og_fetcher) { instance_double(Xtricate::OgFetch, fetch_many: [og_result]) }

@@ -31,10 +31,11 @@ module Xtricate
 
     attr_reader :failures
 
-    def initialize(api_key:, since:, max_per_account: 100, reply_handles: [], qps: 4,
+    def initialize(api_key:, since:, until_at: nil, max_per_account: 100, reply_handles: [], qps: 4,
                    max_retries: 3, conn: nil, throttle: nil, sleeper: nil, logger: nil)
       @api_key = api_key
       @since = since
+      @until_at = until_at
       @max_per_account = max_per_account
       @reply_handles = reply_handles.map { |h| h.to_s.downcase }.to_set
       @max_retries = max_retries
@@ -75,6 +76,7 @@ module Xtricate
           next if tweet.nil?
           # Tweets come newest-first; stop the whole account once we cross the cutoff.
           return tweets if tweet.created_at && tweet.created_at < @since
+          next if too_new?(tweet)
 
           tweets << tweet
           return tweets if tweets.size >= @max_per_account
@@ -95,6 +97,10 @@ module Xtricate
     end
 
     private
+
+    def too_new?(tweet)
+      @until_at && tweet.created_at && tweet.created_at >= @until_at
+    end
 
     def build_conn
       Faraday.new(url: BASE_URL) do |f|

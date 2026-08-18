@@ -32,9 +32,10 @@ module Xtricate
 
     attr_reader :failures
 
-    def initialize(since:, max_per_account: 100, qps: 4, max_retries: 3,
+    def initialize(since:, until_at: nil, max_per_account: 100, qps: 4, max_retries: 3,
                    conn: nil, throttle: nil, sleeper: nil, logger: nil)
       @since = since
+      @until_at = until_at
       @max_per_account = max_per_account
       @max_retries = max_retries
       @logger = logger
@@ -66,6 +67,7 @@ module Xtricate
           tweet = normalize(item, follower: handle)
           next if tweet.nil?
           return tweets if tweet.created_at && tweet.created_at < @since
+          next if too_new?(tweet)
 
           tweets << tweet
           return tweets if tweets.size >= @max_per_account
@@ -85,6 +87,10 @@ module Xtricate
     end
 
     private
+
+    def too_new?(tweet)
+      @until_at && tweet.created_at && tweet.created_at >= @until_at
+    end
 
     def build_conn
       Faraday.new(url: BASE_URL) do |f|

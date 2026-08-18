@@ -130,4 +130,43 @@ RSpec.describe Xtricate::SubscriberBuilder do
       expect(sub.since).to be_within(5).of(Time.now - (3 * 86_400))
     end
   end
+
+  describe "#window" do
+    let(:sub) { build({ "accounts" => %w[paulg], "lookback_days" => 3 }) }
+    let(:now) { Time.new(2026, 8, 17, 12, 0, 0) }
+
+    it "spans lookback_days back from now when nothing is pinned" do
+      window = sub.window(nil, now: now)
+
+      expect(window.start_at).to eq(now - (3 * 86_400))
+      expect(window.end_at).to eq(now)
+    end
+
+    it "takes both bounds from a fully pinned range, ignoring lookback_days" do
+      override = Xtricate::Window.new(start_at: Time.new(2026, 1, 1), end_at: Time.new(2026, 2, 1))
+
+      window = sub.window(override, now: now)
+
+      expect(window.start_at).to eq(Time.new(2026, 1, 1))
+      expect(window.end_at).to eq(Time.new(2026, 2, 1))
+    end
+
+    it "counts lookback_days back from a pinned end when only --until is given" do
+      override = Xtricate::Window.new(start_at: nil, end_at: Time.new(2026, 2, 1))
+
+      window = sub.window(override, now: now)
+
+      expect(window.start_at).to eq(Time.new(2026, 2, 1) - (3 * 86_400))
+      expect(window.end_at).to eq(Time.new(2026, 2, 1))
+    end
+
+    it "runs a pinned start up to now when only --since is given" do
+      override = Xtricate::Window.new(start_at: Time.new(2026, 2, 1), end_at: nil)
+
+      window = sub.window(override, now: now)
+
+      expect(window.start_at).to eq(Time.new(2026, 2, 1))
+      expect(window.end_at).to eq(now)
+    end
+  end
 end

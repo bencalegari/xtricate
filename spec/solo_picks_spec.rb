@@ -2,8 +2,7 @@ require "xtricate/digest"
 
 RSpec.describe Xtricate::Digest do
   subject(:digest) do
-    described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
-                        lookback_days: 7, client: :unused, og_fetcher: :unused)
+    described_class.new(api_key: "k", model: "m", window: week_window, client: :unused, og_fetcher: :unused)
   end
 
   def post(id:, author:, likes: 0, kind: :original, at: nil, quoted_id: nil, source: :twitter)
@@ -118,8 +117,7 @@ RSpec.describe Xtricate::Digest do
 
     context "with a cap" do
       subject(:digest) do
-        described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
-                            lookback_days: 7, max_solo_picks: 2,
+        described_class.new(api_key: "k", model: "m", window: week_window, max_solo_picks: 2,
                             client: :unused, og_fetcher: :unused)
       end
 
@@ -134,8 +132,7 @@ RSpec.describe Xtricate::Digest do
       end
 
       it "drops the section entirely at a cap of zero" do
-        capped = described_class.new(api_key: "k", model: "m", since: Time.now - 604_800,
-                                     lookback_days: 7, max_solo_picks: 0,
+        capped = described_class.new(api_key: "k", model: "m", window: week_window, max_solo_picks: 0,
                                      client: :unused, og_fetcher: :unused)
 
         expect(capped.build_solo_picks(activities, [], [])).to be_empty

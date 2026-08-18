@@ -292,13 +292,49 @@ RSpec.describe Xtricate::Fetch do
       end
     end
 
-    def fetcher_for(conn, reply_handles: [], max_retries: 3, slept: [])
+    def fetcher_for(conn, reply_handles: [], max_retries: 3, slept: [], since: Time.at(0), until_at: nil)
       described_class.new(
-        api_key: "test", since: Time.at(0), conn: conn,
+        api_key: "test", since: since, until_at: until_at, conn: conn,
         reply_handles: reply_handles, max_retries: max_retries,
         throttle: instance_double(Xtricate::Throttle, acquire: nil),
         sleeper: ->(seconds) { slept << seconds }
       )
+    end
+
+    describe "window bounds" do
+      def tweet_at(id, time)
+        { "id" => id, "author" => { "userName" => "dril" }, "text" => "post #{id}",
+          "createdAt" => time.iso8601 }
+      end
+
+      it "stops the account at the first post older than since, since posts arrive newest-first" do
+        conn = RecordingConn.new([ok([tweet_at("2", Time.new(2026, 8, 5)),
+                                      tweet_at("1", Time.new(2026, 7, 1))])])
+
+        tweets = fetcher_for(conn, since: Time.new(2026, 8, 1)).fetch_account("dril")
+
+        expect(tweets.map(&:id)).to eq(%w[2])
+      end
+
+      it "skips posts newer than until_at and keeps the in-window ones underneath them" do
+        conn = RecordingConn.new([ok([tweet_at("3", Time.new(2026, 8, 20)),
+                                      tweet_at("2", Time.new(2026, 8, 5)),
+                                      tweet_at("1", Time.new(2026, 7, 1))])])
+
+        tweets = fetcher_for(conn, since: Time.new(2026, 8, 1),
+                                   until_at: Time.new(2026, 8, 8)).fetch_account("dril")
+
+        expect(tweets.map(&:id)).to eq(%w[2])
+      end
+
+      it "keeps every recent post when no until_at is given" do
+        conn = RecordingConn.new([ok([tweet_at("2", Time.new(2026, 8, 20)),
+                                      tweet_at("1", Time.new(2026, 8, 5))])])
+
+        tweets = fetcher_for(conn, since: Time.new(2026, 8, 1)).fetch_account("dril")
+
+        expect(tweets.map(&:id)).to eq(%w[2 1])
+      end
     end
 
     describe "includeReplies" do
